@@ -12,7 +12,7 @@
 
 
 # LOAD PACKAGES
-
+install.packages("janitor")
 
 library(tidyverse)
 library(janitor)
