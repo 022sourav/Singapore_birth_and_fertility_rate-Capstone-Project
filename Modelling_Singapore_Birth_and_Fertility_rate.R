@@ -885,3 +885,167 @@ write.csv(
 )
 
 
+
+# TIME-SERIES DIAGNOSTICS
+# ============================================================
+
+# Create training data for Total Fertility Rate
+tfr_train <- train_data %>%
+  filter(variable == "Total_Fertility_Rate_TFR") %>%
+  arrange(year)
+
+# Create training data for Total Live-Births
+birth_train <- train_data %>%
+  filter(variable == "Total_Live_Births") %>%
+  arrange(year)
+
+
+
+# Create time-series objects
+# ============================================================
+
+tfr_ts <- ts(
+  tfr_train$value,
+  start = 1960,
+  frequency = 1
+)
+
+birth_ts <- ts(
+  birth_train$value,
+  start = 1960,
+  frequency = 1
+)
+
+
+# Plot TFR time series
+# ============================================================
+
+plot(
+  tfr_ts,
+  main = "Total Fertility Rate Time Series",
+  xlab = "Year",
+  ylab = "Total Fertility Rate",
+  type = "o"
+)
+
+
+# Plot Total Live-Births time series
+# ============================================================
+
+plot(
+  birth_ts,
+  main = "Total Live-Births Time Series",
+  xlab = "Year",
+  ylab = "Total Live-Births",
+  type = "o"
+)
+
+
+# Check stationarity using Augmented Dickey-Fuller test
+# ============================================================
+
+adf_tfr <- adf.test(tfr_ts)
+
+adf_birth <- adf.test(birth_ts)
+
+adf_tfr
+adf_birth
+
+
+# Check autocorrelation
+# ============================================================
+
+acf(
+  tfr_ts,
+  main = "ACF of Total Fertility Rate"
+)
+
+acf(
+  birth_ts,
+  main = "ACF of Total Live-Births"
+)
+
+
+# Check partial autocorrelation
+# ============================================================
+
+pacf(
+  tfr_ts,
+  main = "PACF of Total Fertility Rate"
+)
+
+pacf(
+  birth_ts,
+  main = "PACF of Total Live-Births"
+)
+
+
+# Check whether differencing is needed
+# ============================================================
+
+tfr_diff <- diff(tfr_ts)
+
+birth_diff <- diff(birth_ts)
+
+
+# Plot differenced TFR
+plot(
+  tfr_diff,
+  main = "Differenced Total Fertility Rate",
+  xlab = "Year",
+  ylab = "Differenced TFR",
+  type = "o"
+)
+
+
+# Plot differenced Total Live-Births
+plot(
+  birth_diff,
+  main = "Differenced Total Live-Births",
+  xlab = "Year",
+  ylab = "Differenced Total Live-Births",
+  type = "o"
+)
+
+
+
+# ACF and PACF after differencing
+# ============================================================
+
+acf(
+  tfr_diff,
+  main = "ACF of Differenced TFR"
+)
+
+pacf(
+  tfr_diff,
+  main = "PACF of Differenced TFR"
+)
+
+acf(
+  birth_diff,
+  main = "ACF of Differenced Total Live-Births"
+)
+
+pacf(
+  birth_diff,
+  main = "PACF of Differenced Total Live-Births"
+)
+
+
+
+# Ljung-Box test for autocorrelation
+# ============================================================
+
+Box.test(
+  tfr_ts,
+  lag = 10,
+  type = "Ljung-Box"
+)
+
+Box.test(
+  birth_ts,
+  lag = 10,
+  type = "Ljung-Box"
+)
+
