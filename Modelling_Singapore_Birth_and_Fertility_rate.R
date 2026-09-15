@@ -576,7 +576,7 @@ ggplot(
   facet_wrap(
     ~variable,
     scales = "free_y"
-  )
+  )+
   labs(
     title = "Main Fertility Indicators in Singapore",
     subtitle = "1960 to 2025",
