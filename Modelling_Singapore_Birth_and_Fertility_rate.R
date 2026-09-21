@@ -12,10 +12,13 @@
 
 
 # LOAD PACKAGES
-#install.packages("janitor")
+
 
 library(tidyverse)
 library(janitor)
+library(skimr)
+library(readr)
+library(tseries)
 
 
 
@@ -28,7 +31,8 @@ library(janitor)
 
 raw_data <- read.csv("BirthsAndFertilityRatesAnnual.csv",
   check.names = FALSE,
-  stringsAsFactors = FALSE
+  stringsAsFactors = FALSE,
+  na.strings = c("","NA","N/A","na")
 )
 
 
@@ -36,162 +40,129 @@ raw_data <- read.csv("BirthsAndFertilityRatesAnnual.csv",
 
 head(raw_data)
 
-str(raw_data)
-
 names(raw_data)
 
+str(raw_data)
 
-# TRANSPOSE THE DATA
+
+
+# CLEAN THE DATA
 # ============================================================
 
-# The original data has:
-# - Indicators in rows
-# - Years in columns
-#
-# We want:
-# - Years in rows
-# - Indicators in columns
+# Remove extra spaces from the variable names
+
+raw_data$DataSeries <- str_trim(raw_data$DataSeries)
 
 
-data_transposed <- as.data.frame(
-  t(raw_data[, -1])
-)
+# CHANGE DATA INTO LONG FORMAT
+# ============================================================
+
+# The original data has years as columns.
+# We change it so that each row contains:
+# DataSeries, Year and Value
 
 
-# Use the DataSeries values as column names
-
-colnames(data_transposed) <- raw_data$DataSeries
-
-
-# Create the Year column
-
-data_transposed$Year <- rownames(data_transposed)
-
-
-# Remove row names
-
-rownames(data_transposed) <- NULL
-
-
-# Put Year as the first column
-
-data <- data_transposed %>%
-  select(
-    Year,
-    everything()
-  )
-
-# If X before the year, remove it
-
-data <- data %>%
+data <- raw_data %>%
+  
+  # Make all year columns character first
+  mutate(across(-DataSeries,as.character)
+  ) %>%
+  
+  # Change from wide format to long format
+  pivot_longer(
+    cols = -DataSeries,
+    names_to = "year",
+    values_to = "value"
+  ) %>%
+  
+  # Remove X from the year
   mutate(
-    Year = str_remove(Year, "^X"),
-    Year = as.numeric(Year)
-  )
-
-#  CLEAN COLUMN NAMES
-# ============================================================
-
-# Make column names easier to use in R
-
-names(data) <- make_clean_names(
-  names(data)
-)
-
-data <- data %>%
+    year = str_remove(year, "^X"),
+    year = as.numeric(year),
+    
+    # Convert values to numeric
+    value = str_trim(value),
+    value = na_if(value, "na"),
+    value = as.numeric(value)
+  ) %>%
+  
+  # Rename DataSeries
   rename(
-    age_15_19 = x15_19_years,
-    age_20_24 = x20_24_years,
-    age_25_29 = x25_29_years,
-    age_30_34 = x30_34_years,
-    age_35_39 = x35_39_years,
-    age_40_44 = x40_44_years,
-    age_45_49 = x45_49_years
-  )
-
-# Check the new column names
-
-names(data)
-
-
-# CONVERT DATA VALUES TO NUMERIC
-# ============================================================
-
-# Convert all columns except Year to numeric
-
-data <- data %>%
+    variable = DataSeries
+  ) %>%
+  
+  # Fix variable names
   mutate(
-    across(
-      -year,
-      as.numeric
+    variable = recode(
+      variable,
+      "Total Fertility Rate (TFR)" = "Total_Fertility_Rate_TFR",
+      "15 - 19 Years" = "15_19_Years",
+      "20 - 24 Years" = "20_24_Years",
+      "25 - 29 Years" = "25_29_Years",
+      "30 - 34 Years" = "30_34_Years",
+      "35 - 39 Years" = "35_39_Years",
+      "40 - 44 Years" = "40_44_Years",
+      "45 - 49 Years" = "45_49_Years",
+      "Chinese" = "Chinese",
+      "Malays" = "Malays",
+      "Indians" = "Indians",
+      "Gross Reproduction Rate" = "Gross_Reproduction_Rate",
+      "Net Reproduction Rate" = "Net_Reproduction_Rate",
+      "Crude Birth Rate" = "Crude_Birth_Rate",
+      "Total Live-Births" = "Total_Live_Births",
+      "Resident Live-Births" = "Resident_Live_Births",
+      "Citizen Live-Births" = "Citizen_Live_Births"
     )
-  )
+  ) %>%
+  
+  # Sort by year and variable
+  arrange(year,variable)
 
 
-# SORT DATA BY YEAR
+# CHECK THE LONG DATA
 # ============================================================
 
-data <- data %>%
-  arrange(year)
+head(data, 20)
 
-
-# CHECK CLEANED DATA
-# ============================================================
-
-head(data)
-
-tail(data)
+tail(data, 20)
 
 str(data)
 
-summary(data)
 
+# Check years
 
-
-
-# CHECK DATA RANGE
-# ============================================================
-
-min_year <- min(data$year, na.rm = TRUE)
-
-max_year <- max(data$year, na.rm = TRUE)
-
-
-print(
-  paste("First year:", min_year)
-)
-
-print(
-  paste("Last year:", max_year)
+range(
+  data$year,
+  na.rm = TRUE
 )
 
 
-# Expected:
-# First year: 1960
-# Last year: 2025
+# Check all variables
+
+unique(data$variable)
 
 
 # CHECK MISSING VALUES
 # ============================================================
 
 missing_values <- data %>%
+  group_by(variable) %>%
   summarise(
-    across(
-      everything(),
-      ~ sum(is.na(.))
-    )
+    missing = sum(is.na(value)),
+    .groups = "drop"
   )
 
 
 print(missing_values)
 
 
-# CHECK FOR DUPLICATE YEARS
+# CHECK DUPLICATES
 # ============================================================
 
 data %>%
-  count(year) %>%
+  count(year,variable) %>%
   filter(n > 1)
+
 
 
 # CREATE TRAINING DATA
@@ -215,9 +186,10 @@ test_data <- data %>%
 
 
 # Check dimensions
-
+head(train_data)
 dim(train_data)
 
+head(test_data)
 dim(test_data)
 
 
@@ -228,32 +200,71 @@ if (!dir.exists("Output")) {
   dir.create("Output")
 }
 
-
-if (!dir.exists("Plots")) {
-  dir.create("Plots")
+if (!dir.exists("Output/Data")) {
+  dir.create("Output/Data")
 }
 
+if (!dir.exists("Output/EDA")) {
+  dir.create("Output/EDA")
+}
+
+if (!dir.exists("Output/EDA/Graphs")) {
+  dir.create("Output/EDA/Graphs", recursive = TRUE)
+}
 
 # SAVE CLEANED DATA
 # ============================================================
 
-write_csv(
+write.csv(
   data,
-  "Output/Singapore_Birth_Fertility_Cleaned.csv"
+  "Output/Data/Cleaned_Singapore_Birth_Fertility_Data.csv",
+  row.names = FALSE
 )
 
-
-write_csv(
+write.csv(
   train_data,
-  "Output/Training_Data_1960_2012.csv"
+  "Output/Data/Training_Data_1960_2012.csv",
+  row.names = FALSE
 )
 
-
-write_csv(
+write.csv(
   test_data,
-  "Output/Testing_Data_2013_2025.csv"
+  "Output/Data/Testing_Data_2013_2025.csv",
+  row.names = FALSE
 )
 
+# CREATE DATA DICTIONARY
+# ============================================================
+
+data_dictionary <- tibble(
+  variable = unique(data$variable),
+  description = c(
+    "Total Fertility Rate",
+    "Age-specific fertility rate for ages 15-19",
+    "Age-specific fertility rate for ages 20-24",
+    "Age-specific fertility rate for ages 25-29",
+    "Age-specific fertility rate for ages 30-34",
+    "Age-specific fertility rate for ages 35-39",
+    "Age-specific fertility rate for ages 40-44",
+    "Age-specific fertility rate for ages 45-49",
+    "Fertility rate for Chinese population",
+    "Fertility rate for Malay population",
+    "Fertility rate for Indian population",
+    "Gross Reproduction Rate",
+    "Net Reproduction Rate",
+    "Crude Birth Rate",
+    "Total number of live-births",
+    "Resident number of live-births",
+    "Citizen number of live-births"
+  )
+)
+
+
+write.csv(
+  data_dictionary,
+  "Output/Data/Data_Dictionary.csv",
+  row.names = FALSE
+)
 
 
 
@@ -261,25 +272,38 @@ write_csv(
 # EXPLORATORY DATA ANALYSIS
 # ============================================================
 
-
+# BASIC SUMMARY
 # ============================================================
+
+data %>%
+  group_by(variable) %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    median = median(value, na.rm = TRUE),
+    minimum = min(value, na.rm = TRUE),
+    maximum = max(value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
 # TOTAL FERTILITY RATE
 # ============================================================
+tfr_data <- data %>%
+  filter(
+    variable == "Total_Fertility_Rate_TFR"
+  )
+
 
 ggplot(
-  data,
+  tfr_data,
   aes(
     x = year,
-    y = total_fertility_rate_tfr
+    y = value
   )
 ) +
   geom_line(
-    linewidth = 1.2,
-    colour = "steelblue"
-  ) +
-  geom_point(
-    size = 1.5,
-    colour = "steelblue"
+    colour = "steelblue",
+    linewidth = 1
   ) +
   labs(
     title = "Singapore Total Fertility Rate",
@@ -288,25 +312,32 @@ ggplot(
     y = "Total Fertility Rate"
   ) +
   theme_minimal()
+ggsave(
+  "Output/EDA/Graphs/01_Total_Fertility_Rate.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+)
 
-# ============================================================
 # TOTAL LIVE-BIRTHS
 # ============================================================
 
+birth_data <- data %>%
+  filter(
+    variable == "Total_Live_Births"
+  )
+
+
 ggplot(
-  data,
+  birth_data,
   aes(
     x = year,
-    y = total_live_births
+    y = value
   )
 ) +
   geom_line(
-    linewidth = 1.2,
-    colour = "forestgreen"
-  ) +
-  geom_point(
-    size = 1.5,
-    colour = "forestgreen"
+    colour = "forestgreen",
+    linewidth = 1
   ) +
   labs(
     title = "Total Live-Births in Singapore",
@@ -316,53 +347,62 @@ ggplot(
   ) +
   theme_minimal()
 
-# ============================================================
+ggsave(
+  "Output/EDA/Graphs/02_Total_Live_Births.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+
 # CRUDE BIRTH RATE
 # ============================================================
 
+crude_birth_data <- data %>%
+  filter(
+    variable == "Crude_Birth_Rate"
+  )
+
+
 ggplot(
-  data,
+  crude_birth_data,
   aes(
     x = year,
-    y = crude_birth_rate
+    y = value
   )
 ) +
   geom_line(
-    linewidth = 1.2,
-    colour = "darkorange"
-  ) +
-  geom_point(
-    size = 1.5,
-    colour = "darkorange"
+    colour = "darkorange",
+    linewidth = 1
   ) +
   labs(
     title = "Singapore Crude Birth Rate",
     subtitle = "1960 to 2025",
     x = "Year",
-    y = "Birth Rate per 1,000 Population"
+    y = "Crude Birth Rate"
   ) +
   theme_minimal()
+ggsave(
+  "Output/EDA/Graphs/03_Crude_Birth_Rate.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+)
 
-
-# ============================================================
 # AGE-SPECIFIC FERTILITY RATES
 # ============================================================
 
 age_data <- data %>%
-  select(
-    year,
-    age_15_19,
-    age_20_24,
-    age_25_29,
-    age_30_34,
-    age_35_39,
-    age_40_44,
-    age_45_49
-  ) %>%
-  pivot_longer(
-    cols = -year,
-    names_to = "Age_Group",
-    values_to = "Fertility_Rate"
+  filter(
+    variable %in% c(
+      "15_19_Years",
+      "20_24_Years",
+      "25_29_Years",
+      "30_34_Years",
+      "35_39_Years",
+      "40_44_Years",
+      "45_49_Years"
+    )
   )
 
 
@@ -370,25 +410,12 @@ ggplot(
   age_data,
   aes(
     x = year,
-    y = Fertility_Rate,
-    group = Age_Group,
-    colour = Age_Group
+    y = value,
+    colour = variable
   )
 ) +
   geom_line(
     linewidth = 1
-  ) +
-  scale_colour_brewer(
-    palette = "Dark2",
-    labels = c(
-      age_15_19 = "15–19 years",
-      age_20_24 = "20–24 years",
-      age_25_29 = "25–29 years",
-      age_30_34 = "30–34 years",
-      age_35_39 = "35–39 years",
-      age_40_44 = "40–44 years",
-      age_45_49 = "45–49 years"
-    )
   ) +
   labs(
     title = "Age-Specific Fertility Rates",
@@ -398,9 +425,15 @@ ggplot(
     colour = "Age Group"
   ) +
   theme_minimal()
+ggsave(
+  "Output/EDA/Graphs/04_Age-Specific Fertility Rates.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+)
 
-# ============================================================
-# AGE-SPECIFIC FERTILITY: 1960 VS 2025
+
+# AGE-SPECIFIC FERTILITY RATES - 1960 AND 2025
 # ============================================================
 
 age_comparison <- age_data %>%
@@ -412,49 +445,42 @@ age_comparison <- age_data %>%
 ggplot(
   age_comparison,
   aes(
-    x = Age_Group,
-    y = Fertility_Rate,
-    group = factor(year),
-    colour = factor(year)
+    x = variable,
+    y = value,
+    fill = variable
   )
 ) +
-  geom_line(
-    linewidth = 1
-  ) +
-  geom_point(
-    size = 3
-  ) +
-  scale_colour_manual(
-    values = c(
-      "1960" = "steelblue",
-      "2025" = "darkorange"
-    )
+  geom_col() +
+  facet_wrap(
+    ~year
   ) +
   labs(
-    title = "Age-Specific Fertility: 1960 vs 2025",
-    subtitle = "Comparison of fertility patterns across age groups",
+    title = "Age-Specific Fertility Rates: 1960 vs 2025",
     x = "Age Group",
-    y = "Fertility Rate",
-    colour = "Year"
+    y = "Fertility Rate"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
 
+ggsave(
+  "Output/EDA/Graphs/05_Age-Specific Fertility Rates Comparison.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+)
 
-# ============================================================
 # ETHNIC GROUP FERTILITY
 # ============================================================
 
 ethnic_data <- data %>%
-  select(
-    year,
-    chinese,
-    malays,
-    indians
-  ) %>%
-  pivot_longer(
-    cols = -year,
-    names_to = "Ethnic_Group",
-    values_to = "Fertility_Rate"
+  filter(
+    variable %in% c(
+      "Chinese",
+      "Malays",
+      "Indians"
+    )
   )
 
 
@@ -462,25 +488,12 @@ ggplot(
   ethnic_data,
   aes(
     x = year,
-    y = Fertility_Rate,
-    group = Ethnic_Group,
-    colour = Ethnic_Group
+    y = value,
+    colour = variable
   )
 ) +
   geom_line(
     linewidth = 1.2
-  ) +
-  scale_colour_manual(
-    values = c(
-      "chinese" = "steelblue",
-      "malays" = "darkorange",
-      "indians" = "forestgreen"
-    ),
-    labels = c(
-      chinese = "Chinese",
-      malays = "Malay",
-      indians = "Indian"
-    )
   ) +
   labs(
     title = "Fertility Rates by Ethnic Group",
@@ -491,20 +504,23 @@ ggplot(
   ) +
   theme_minimal()
 
-# ============================================================
+ggsave(
+  "Output/EDA/Graphs/06_Ethinc_Group_Fertility.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+
 # GROSS AND NET REPRODUCTION RATE
 # ============================================================
 
 reproduction_data <- data %>%
-  select(
-    year,
-    gross_reproduction_rate,
-    net_reproduction_rate
-  ) %>%
-  pivot_longer(
-    cols = -year,
-    names_to = "Rate_Type",
-    values_to = "Rate"
+  filter(
+    variable %in% c(
+      "Gross_Reproduction_Rate",
+      "Net_Reproduction_Rate"
+    )
   )
 
 
@@ -512,48 +528,38 @@ ggplot(
   reproduction_data,
   aes(
     x = year,
-    y = Rate,
-    group = Rate_Type,
-    colour = Rate_Type
+    y = value,
+    colour = variable
   )
 ) +
   geom_line(
     linewidth = 1.2
   ) +
-  scale_colour_manual(
-    values = c(
-      "gross_reproduction_rate" = "purple",
-      "net_reproduction_rate" = "red"
-    ),
-    labels = c(
-      gross_reproduction_rate = "Gross Reproduction Rate",
-      net_reproduction_rate = "Net Reproduction Rate"
-    )
-  ) +
   labs(
     title = "Gross and Net Reproduction Rates",
     subtitle = "Singapore, 1960 to 2025",
     x = "Year",
-    y = "Reproduction Rate",
-    colour = "Rate Type"
+    y = "Rate",
+    colour = "Variable"
   ) +
   theme_minimal()
 
+ggsave(
+  "Output/EDA/Graphs/07_Gross_Net_Reproduction_Rates.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+)
 
-# ============================================================
-# MAIN INDICATORS
+# MAIN FERTILITY INDICATORS
 # ============================================================
 
 main_data <- data %>%
-  select(
-    year,
-    total_fertility_rate_tfr,
-    total_live_births
-  ) %>%
-  pivot_longer(
-    cols = -year,
-    names_to = "Indicator",
-    values_to = "Value"
+  filter(
+    variable %in% c(
+      "Total_Fertility_Rate_TFR",
+      "Total_Live_Births"
+    )
   )
 
 
@@ -561,87 +567,169 @@ ggplot(
   main_data,
   aes(
     x = year,
-    y = Value,
-    colour = Indicator
+    y = value,
+    colour = variable
   )
 ) +
   geom_line(
     linewidth = 1.2
   ) +
   facet_wrap(
-    ~ Indicator,
-    scales = "free_y",
-    labeller = as_labeller(
-      c(
-        total_fertility_rate_tfr = "Total Fertility Rate",
-        total_live_births = "Total Live-Births"
-      )
-    )
-  ) +
-  scale_colour_manual(
-    values = c(
-      "total_fertility_rate_tfr" = "steelblue",
-      "total_live_births" = "forestgreen"
-    )
-  ) +
+    ~variable,
+    scales = "free_y"
+  )+
   labs(
-    title = "Main Fertility Indicators",
-    subtitle = "Singapore, 1960 to 2025",
+    title = "Main Fertility Indicators in Singapore",
+    subtitle = "1960 to 2025",
     x = "Year",
-    y = "Value"
+    y = "Value",
+    colour = "Indicator"
   ) +
-  theme_minimal() +
-  theme(
-    legend.position = "none"
+  theme_minimal()
+
+  ggsave(
+    "Output/EDA/Graphs/08_Main_Indicators.png",
+    width = 10,
+    height = 6,
+    dpi = 300
+  )  
+
+
+
+# TFR- TRAINING AND TESTING PERIOD
+# ============================================================
+
+tfr_train <- data %>%
+  filter(
+    variable == "Total_Fertility_Rate_TFR",
+    year <= 2012
   )
 
 
-# ============================================================
-# TFR START AND END VALUES
+tfr_test <- data %>%
+  filter(
+    variable == "Total_Fertility_Rate_TFR",
+    year >= 2013
+  )
+
+
+ggplot() +
+  
+  geom_line(
+    data = tfr_train,
+    aes(
+      x = year,
+      y = value
+    ),
+    colour = "blue",
+    linewidth = 1
+  ) +
+  
+  geom_line(
+    data = tfr_test,
+    aes(
+      x = year,
+      y = value
+    ),
+    colour = "red",
+    linewidth = 1
+  ) +
+  
+  labs(
+    title = "TFR Training and Testing Period",
+    subtitle = "Training: 1960-2012 | Testing: 2013-2025",
+    x = "Year",
+    y = "Total Fertility Rate"
+  ) +
+  
+  theme_minimal()
+
+ggsave(
+  "Output/EDA/Graphs/09_TFR_Training_Testing.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+) 
+
+
+# TFR 1960 AND 2025
 # ============================================================
 
-tfr_start_end <- data %>%
+tfr_start_end <- tfr_data %>%
   filter(
     year %in% c(1960, 2025)
-  ) %>%
-  select(
-    year,
-    total_fertility_rate_tfr
   )
 
 
 print(tfr_start_end)
 
+ggplot(
+  tfr_start_end,
+  aes(
+    x = factor(year),
+    y = value
+  )
+) +
+  geom_col() +
+  labs(
+    title = "Total Fertility Rate: 1960 vs 2025",
+    x = "Year",
+    y = "Total Fertility Rate"
+  ) +
+  theme_minimal()
 
-# ============================================================
-# LIVE-BIRTHS START AND END VALUES
+
+ggsave(
+  "Output/EDA/Graphs/10_TFR_1960_vs_2025.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+) 
+
+# TOTAL LIVE-BIRTHS 1960 AND 2025
 # ============================================================
 
-birth_start_end <- data %>%
+birth_start_end <- birth_data %>%
   filter(
     year %in% c(1960, 2025)
-  ) %>%
-  select(
-    year,
-    total_live_births
   )
 
 
 print(birth_start_end)
 
+ggplot(
+  birth_start_end,
+  aes(
+    x = factor(year),
+    y = value
+  )
+) +
+  geom_col() +
+  labs(
+    title = "Total Live-Births: 1960 vs 2025",
+    x = "Year",
+    y = "Total Live-Births"
+  ) +
+  theme_minimal()
 
-# ============================================================
-# TFR PERCENTAGE CHANGE
+ggsave(
+  "Output/EDA/Graphs/11_Total_Live_Births_1960_vs_2025.png",
+  width = 10,
+  height = 6,
+  dpi = 300
+) 
+
+# PERCENTAGE CHANGE IN TFR
 # ============================================================
 
-tfr_1960 <- data %>%
+tfr_1960 <- tfr_data %>%
   filter(year == 1960) %>%
-  pull(total_fertility_rate_tfr)
+  pull(value)
 
 
-tfr_2025 <- data %>%
+tfr_2025 <- tfr_data %>%
   filter(year == 2025) %>%
-  pull(total_fertility_rate_tfr)
+  pull(value)
 
 
 tfr_change <- (
@@ -652,42 +740,151 @@ tfr_change <- (
 
 print(
   paste(
-    "Percentage change in TFR:",
+    "TFR percentage change:",
     round(tfr_change, 2),
     "%"
   )
 )
 
-
-# ============================================================
-# CORRELATION ANALYSIS
+# PERCENTAGE CHANGE IN TOTAL LIVE-BIRTHS
 # ============================================================
 
-# Select all numeric columns except Year
-
-numeric_data <- data %>%
-  select(
-    -year
+tlb_data <- data %>%
+  filter(
+    variable == "Total_Live_Births"
   )
 
 
-correlation_matrix <- cor(
-  numeric_data,
-  use = "pairwise.complete.obs"
-)
+tlb_1960 <- tlb_data %>%
+  filter(year == 1960) %>%
+  pull(value)
+
+
+tlb_2025 <- tlb_data %>%
+  filter(year == 2025) %>%
+  pull(value)
+
+
+tlb_change <- (
+  (tlb_2025 - tlb_1960) /
+    tlb_1960
+) * 100
 
 
 print(
-  round(correlation_matrix, 2)
+  paste(
+    "Total Live-Births percentage change:",
+    round(tlb_change, 2),
+    "%"
+  )
 )
 
 
-# Save correlation matrix
+# HIGHEST FERTILITY AGE GROUP IN 1960
+# ============================================================
+
+age_1960 <- age_data %>%
+  filter(year == 1960) %>%
+  arrange(desc(value)
+  )
+
+
+print(age_1960)
+
+
+# HIGHEST FERTILITY AGE GROUP IN 2025
+# ============================================================
+
+age_2025 <- age_data %>%
+  filter(year == 2025) %>%
+  arrange(desc(value)
+  )
+
+
+print(age_2025)
+
+
+
+# HIGHEST ETHNIC FERTILITY IN 2025
+# ============================================================
+
+ethnic_2025 <- ethnic_data %>%
+  filter(year == 2025) %>%
+  arrange(desc(value)
+  )
+
+
+print(ethnic_2025)
+
+
+# CORRELATION ANALYSIS
+# ============================================================
+
+correlation_data <- data %>%
+  select(
+    year,
+    variable,
+    value
+  ) %>%
+  pivot_wider(
+    names_from = variable,
+    values_from = value
+  )
+
+correlation_matrix <- correlation_data %>%
+  select(
+    Total_Fertility_Rate_TFR,
+    Total_Live_Births,
+    Crude_Birth_Rate,
+    Gross_Reproduction_Rate,
+    Net_Reproduction_Rate
+  ) %>%
+  cor(
+    use = "pairwise.complete.obs"
+  )
+
+print(correlation_matrix)
+
+
+
+# SAVE SOME EDA RESULTS
+# ============================================================
+
+write.csv(
+  tfr_data,
+  "Output/EDA/TFR_Data.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  tlb_data,
+  "Output/EDA/Total_Live_Births_Data.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  age_data,
+  "Output/EDA/Age_Specific_Fertility_Data.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  ethnic_data,
+  "Output/EDA/Ethnic_Fertility_Data.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  reproduction_data,
+  "Output/EDA/Reproduction_Rate_Data.csv",
+  row.names = FALSE
+)
 
 write.csv(
   correlation_matrix,
-  "Output/Correlation_Matrix.csv"
+  "Output/EDA/Correlation_Matrix.csv"
 )
+
 
 ### ##############################################ARIMA ---- HK
 
