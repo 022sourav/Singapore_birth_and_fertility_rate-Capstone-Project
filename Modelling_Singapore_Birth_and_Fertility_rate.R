@@ -1,3 +1,4 @@
+
 # ============================================================
 # PROJECT: Modelling Singapore Birth and Fertility Rates
 # Team: PG-S2-51
@@ -1049,7 +1050,4 @@ Box.test(
   lag = 10,
   type = "Ljung-Box"
 )
-
-
-### ##############################################ARIMA ---- HK
 
