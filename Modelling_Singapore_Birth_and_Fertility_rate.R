@@ -10,17 +10,14 @@
 # Testing period: 2013 - 2025
 # ============================================================
 
-
-
 # LOAD PACKAGES
-
 
 library(tidyverse)
 library(janitor)
 library(skimr)
 library(readr)
 library(tseries)
-
+library(forecast)
 
 
 # DATA CLEANING
@@ -612,7 +609,7 @@ tfr_test <- data %>%
     variable == "Total_Fertility_Rate_TFR",
     year >= 2013
   )
-
+tfr_test
 
 ggplot() +
   
@@ -664,28 +661,6 @@ tfr_start_end <- tfr_data %>%
 
 print(tfr_start_end)
 
-ggplot(
-  tfr_start_end,
-  aes(
-    x = factor(year),
-    y = value
-  )
-) +
-  geom_col() +
-  labs(
-    title = "Total Fertility Rate: 1960 vs 2025",
-    x = "Year",
-    y = "Total Fertility Rate"
-  ) +
-  theme_minimal()
-
-
-ggsave(
-  "Output/EDA/Graphs/10_TFR_1960_vs_2025.png",
-  width = 10,
-  height = 6,
-  dpi = 300
-) 
 
 # TOTAL LIVE-BIRTHS 1960 AND 2025
 # ============================================================
@@ -698,27 +673,6 @@ birth_start_end <- birth_data %>%
 
 print(birth_start_end)
 
-ggplot(
-  birth_start_end,
-  aes(
-    x = factor(year),
-    y = value
-  )
-) +
-  geom_col() +
-  labs(
-    title = "Total Live-Births: 1960 vs 2025",
-    x = "Year",
-    y = "Total Live-Births"
-  ) +
-  theme_minimal()
-
-ggsave(
-  "Output/EDA/Graphs/11_Total_Live_Births_1960_vs_2025.png",
-  width = 10,
-  height = 6,
-  dpi = 300
-) 
 
 # PERCENTAGE CHANGE IN TFR
 # ============================================================
@@ -887,167 +841,917 @@ write.csv(
 )
 
 
+##############################################################
+#ARIMA MODEL - TFR
 
-# TIME-SERIES DIAGNOSTICS
-# ============================================================
-
-# Create training data for Total Fertility Rate
 tfr_train <- train_data %>%
   filter(variable == "Total_Fertility_Rate_TFR") %>%
   arrange(year)
 
-# Create training data for Total Live-Births
-birth_train <- train_data %>%
-  filter(variable == "Total_Live_Births") %>%
+tfr_test <- test_data %>%
+  filter(variable == "Total_Fertility_Rate_TFR") %>%
   arrange(year)
-
-
-
-# Create time-series objects
-# ============================================================
 
 tfr_ts <- ts(
   tfr_train$value,
   start = 1960,
   frequency = 1
 )
+tfr_ts
 
-birth_ts <- ts(
-  birth_train$value,
-  start = 1960,
-  frequency = 1
-)
+#Plot Original TFR
 
+plot(tfr_ts,
+     main = "Singapore Total Fertility Rate",
+     xlab = "Year",
+     ylab = "Total Fertility Rate")
 
-# Plot TFR time series
-# ============================================================
-
-plot(
-  tfr_ts,
-  main = "Total Fertility Rate Time Series",
-  xlab = "Year",
-  ylab = "Total Fertility Rate",
-  type = "o"
-)
-
-
-# Plot Total Live-Births time series
-# ============================================================
-
-plot(
-  birth_ts,
-  main = "Total Live-Births Time Series",
-  xlab = "Year",
-  ylab = "Total Live-Births",
-  type = "o"
-)
-
-
-# Check stationarity using Augmented Dickey-Fuller test
-# ============================================================
-
-adf_tfr <- adf.test(tfr_ts)
-
-adf_birth <- adf.test(birth_ts)
-
-adf_tfr
-adf_birth
-
-
-# Check autocorrelation
-# ============================================================
-
-acf(
-  tfr_ts,
-  main = "ACF of Total Fertility Rate"
-)
-
-acf(
-  birth_ts,
-  main = "ACF of Total Live-Births"
-)
-
-
-# Check partial autocorrelation
-# ============================================================
-
-pacf(
-  tfr_ts,
-  main = "PACF of Total Fertility Rate"
-)
-
-pacf(
-  birth_ts,
-  main = "PACF of Total Live-Births"
-)
-
-
-# Check whether differencing is needed
-# ============================================================
+# First Difference of TFR
 
 tfr_diff <- diff(tfr_ts)
+tfr_diff
 
-birth_diff <- diff(birth_ts)
+plot(tfr_diff,
+     main = "First Difference of Singapore TFR",
+     xlab = "Year",
+     ylab = "Differenced TFR")
+
+# ACF and PACF of differenced TFR
+
+acf(tfr_diff, lag.max = 40, main= "ACF of differenced TFR")
+
+pacf(tfr_diff, lag.max = 40, main = "PACF of differenced TFR" )
+
+# Second difference of TFR
+
+tfr_diff2 <- diff(tfr_ts, differences = 2)
+tfr_diff2
+
+plot(tfr_diff2,
+     main = "Second Difference of Singapore TFR",
+     xlab = "Year",
+     ylab = "Second Differenced TFR")
+
+# ACF and PACF for second differenced TFR
+
+acf(tfr_diff2, lag.max = 40, main = "ACF of second differenced TFR")
+
+pacf(tfr_diff2, lag.max = 40, main = "PACF of second differenced TFR")
 
 
-# Plot differenced TFR
-plot(
-  tfr_diff,
-  main = "Differenced Total Fertility Rate",
-  xlab = "Year",
-  ylab = "Differenced TFR",
-  type = "o"
+#########  TFR ARIMA ############################
+# Full dataset tfr
+
+tfr <- data[data$variable == "Total_Fertility_Rate_TFR", ]
+tfr <- tfr[order(tfr$year), ]
+
+#Training dataset
+
+train_rows_tfr <- tfr[tfr$year >= 1960 & tfr$year <= 2012, ]
+train_rows_tfr <- train_rows_tfr[order(train_rows_tfr$year), ]
+
+# Create the training time series
+
+tfr_training <- ts(train_rows_tfr$value, start = 1960, end = 2012, frequency = 1)
+tfr_training
+
+
+
+# Test dataset
+
+# Select and sort the test years
+
+test_rows <- tfr[tfr$year >= 2013 & tfr$year <= 2025, ]
+test_rows <- test_rows[order(test_rows$year), ]
+
+# Create the test time series
+
+tfr_test <- ts(test_rows$value, start = 2013, end = 2025, frequency = 1)
+tfr_test
+
+# KPSS TEST
+#plot(tfr_training)
+kpss.test(diff(tfr_training))
+
+kpss.test(diff(diff(tfr_training)))
+
+#plot(diff(diff(tfr_training)))
+acf(diff(diff(tfr_training)),lag=40)
+pacf(diff(diff(tfr_training)),lag=40)
+
+########## RUN mODEL ###############################
+candidate_tfr <- arima((tfr_training), order = c(12,2,3))
+candidate_tfr
+
+########### FORCAST #########################################
+fc <- predict(candidate_tfr, n.ahead = length(tfr_test))$pred
+train_fitted <- tfr_training - residuals(candidate_tfr)
+
+# Training accuracy
+accuracy(train_fitted, tfr_training)[, c("RMSE", "MAE", "MAPE")]
+
+accuracy(fc, tfr_test)[, c("RMSE", "MAE", "MAPE")]
+
+# FORCAST Result
+#       Model  Set       AIC      RMSE       MAE      MAPE
+# 3 ARIMA(12,2,3) Test -62.57198 0.1216015 0.09286404  9.011205
+# 4 ARIMA(12,2,4) Test -60.98709 0.1331871 0.09849370  9.637660
+# 10,2,3       RMSE        MAE       MAPE 
+#            0.2667480  0.2131881 20.9759165 
+#AIC--54.69
+#ARIMA(10,2,4) Test -57.48213 0.2619891 0.2057930 20.36590
+#ARIMA(11,2,3) Test -52.90772 0.2569323 0.2049421 20.174292
+
+# ACF PACF
+old_par <- par(mfrow = c(1, 2))
+acf(residuals(candidate_tfr), lag.max = 40, main = "ACF-c(12,2,3)")
+pacf(residuals(candidate_tfr), lag.max = 40, main = "PACF-c(12,2,3)")
+par(old_par)
+
+
+############################ PLOT PRDECTION TFR ARIMA ###################
+# Models to compare
+orders <- list(
+  c(12, 2, 3),
+  c(12, 2, 4),
+  c(10, 2, 4)
 )
 
-
-# Plot differenced Total Live-Births
-plot(
-  birth_diff,
-  main = "Differenced Total Live-Births",
-  xlab = "Year",
-  ylab = "Differenced Total Live-Births",
-  type = "o"
+selected_names <- sapply(
+  orders,
+  function(x) paste0("ARIMA(", paste(x, collapse = ","), ")")
 )
 
-
-
-# ACF and PACF after differencing
-# ============================================================
-
-acf(
-  tfr_diff,
-  main = "ACF of Differenced TFR"
+# Fit TFR models without log
+selected_models <- setNames(
+  lapply(orders, function(x) {
+    arima(
+      tfr_training,
+      order = x,
+      method = "ML",
+      optim.control = list(maxit = 2000)
+    )
+  }),
+  selected_names
 )
 
-pacf(
-  tfr_diff,
-  main = "PACF of Differenced TFR"
+# Training fitted values
+train_predictions <- lapply(selected_models, function(model) {
+  tfr_training - residuals(model)
+})
+
+# Test predictions
+test_predictions <- lapply(selected_models, function(model) {
+  predict(model, n.ahead = length(tfr_test))$pred
+})
+
+# Colours and line types
+colours <- c("blue", "red", "darkgreen")
+line_types <- 1:3
+
+# Horizontal axes
+use_years <- is.ts(tfr_training) && is.ts(tfr_test)
+
+if (use_years) {
+  train_years <- as.numeric(time(tfr_training))
+  test_years <- as.numeric(time(tfr_test))
+} else {
+  train_years <- seq_along(tfr_training)
+  test_years <- length(tfr_training) + seq_along(tfr_test)
+}
+
+# Plotting function
+plot_predictions <- function(actual, years, predictions, title, set) {
+  
+  actual <- as.numeric(actual)
+  
+  model_labels <- sapply(seq_along(selected_models), function(i) {
+    
+    predicted <- as.numeric(predictions[[i]])
+    
+    valid <- is.finite(actual) &
+      is.finite(predicted) &
+      actual != 0
+    
+    mape <- mean(
+      abs((actual[valid] - predicted[valid]) / actual[valid])
+    ) * 100
+    
+    sprintf(
+      "%s | AIC: %.2f | %s MAPE: %.2f%%",
+      selected_names[i],
+      AIC(selected_models[[i]]),
+      set,
+      mape
+    )
+  })
+  
+  plot(
+    years, actual,
+    type = "l",
+    col = "black",
+    lwd = 3,
+    ylim = range(c(actual, unlist(predictions)), finite = TRUE),
+    xlab = if (use_years) "Year" else "Observation",
+    ylab = "Total fertility rate",
+    main = title
+  )
+  
+  for (i in seq_along(predictions)) {
+    lines(
+      years,
+      as.numeric(predictions[[i]]),
+      col = colours[i],
+      lty = line_types[i],
+      lwd = 2
+    )
+  }
+  
+  legend(
+    "bottomleft",
+    legend = c("Actual", model_labels),
+    col = c("black", colours),
+    lty = c(1, line_types),
+    lwd = c(3, 2, 2, 2),
+    cex = 0.55,
+    bty = "n"
+  )
+}
+
+# Training and test graphs on one screen
+old_par <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+plot_predictions(
+  tfr_training, train_years, train_predictions,
+  "Training: Actual vs Fitted", "Train"
 )
 
-acf(
-  birth_diff,
-  main = "ACF of Differenced Total Live-Births"
+plot_predictions(
+  tfr_test, test_years, test_predictions,
+  "Test: Actual vs Prediction", "Test"
 )
 
-pacf(
-  birth_diff,
-  main = "PACF of Differenced Total Live-Births"
+par(old_par)
+
+######################### ARIMA MODEL - TLB ##################################
+
+
+tlb <- data[data$variable == "Total_Live_Births", ]
+tlb <- tlb[order(tlb$year), ]
+
+# Training Dataset
+
+train_rows_tlb <- tlb[tlb$year >= 1960 & tlb$year <= 2012, ]
+train_rows_tlb <- train_rows_tlb[order(train_rows_tlb$year), ]
+
+# Create the training time series
+
+tlb_training <- ts(train_rows_tlb$value, start = 1960, end = 2012, frequency = 1)
+tlb_training
+
+# TEST DATASET
+
+# Select and sort the test years
+
+test_rows <- tlb[tlb$year >= 2013 & tlb$year <= 2025, ]
+test_rows <- test_rows[order(test_rows$year), ]
+
+# Create the test time series
+
+tlb_test <- ts(test_rows$value, start = 2013, end = 2025, frequency = 1)
+tlb_test
+
+
+
+
+#plot(log(tlb_training))
+kpss.test(diff(log(tlb_training)))
+
+#plot(diff(log(tlb_training)))
+
+acf(diff(log(tlb_training)),lag=40)
+pacf(diff(log(tlb_training)),lag=40)
+
+
+
+#######  RUN MODEL ##########################
+candidate_tlb <- arima(  log(tlb_training),  order = c(12, 1, 3))
+candidate_tlb
+
+# Test accuracy on the original scale
+predicted_births <- exp(predict(candidate_tlb, n.ahead = length(tlb_test))$pred)
+accuracy(predicted_births, tlb_test)[, c("RMSE", "MAE", "MAPE")]
+
+# Residual diagnostics
+old_par_tlb <- par(mfrow = c(1, 2))
+acf(residuals(candidate_tlb), lag.max = 40, main = "ACF-c(12, 1, 3)")
+pacf(residuals(candidate_tlb), lag.max = 40, main = "PACF-c(12, 1, 3)")
+par(old_par_tlb)
+
+#### prediction graph
+
+# Training fitted values and test predictions
+train_pred <- exp(log(tlb_training) - residuals(candidate_tlb))
+test_pred <- exp(predict(candidate_tlb, n.ahead = length(tlb_test))$pred)
+
+######### PRDDICTION RESUL
+
+#           Model  Set       AIC      RMSE      MAE     MAPE
+
+# 4 ARIMA(13,1,1) Test -141.4462 10476.842 8969.293 25.21881
+# 3 ARIMA(13,1,2) Test -142.4665 10203.632 8715.483 24.53455
+# 1 ARIMA(13,1,3) Test -145.4682  9299.696 7881.560 22.18053
+# 2 ARIMA(13,1,4) Test -144.77  9937.09618 8295.83  23.43728
+
+# 4 ARIMA(12,1,3) Test -139.6921 5654.236 4331.727 12.50054 -------------
+# 4 ARIMA(12,1,4) Test -144.77  9937.09618 8295.83691   23.43728
+#ARIMA(11,1,4) AIC -  -136.58
+# RMSE        MAE       MAPE 
+# 8677.98763 7475.43243   21.01787
+#ARIMA(14,1,3) Test -143.6268  9458.965 8027.458 22.58280
+################## PLOT PREDICTION################################
+
+# Keep only your passing models here
+orders_tlb <- list(
+  c(13, 1, 4),
+  c(12, 1, 3),
+  c(13, 1, 3)
 )
 
-
-
-# Ljung-Box test for autocorrelation
-# ============================================================
-
-Box.test(
-  tfr_ts,
-  lag = 10,
-  type = "Ljung-Box"
+# Model names
+selected_names_tlb <- sapply(
+  orders_tlb,
+  function(x) paste0("ARIMA(", paste(x, collapse = ","), ")")
 )
 
-Box.test(
-  birth_ts,
-  lag = 10,
-  type = "Ljung-Box"
+# Fit log models using the default arima() method
+selected_models_tlb <- setNames(
+  lapply(orders_tlb, function(x) {
+    arima(
+      log(tlb_training),
+      order = x,
+      method = "ML",
+      optim.control = list(maxit = 2000)
+    )
+  }),
+  selected_names_tlb
 )
 
+# Training fitted values on the original birth-count scale
+train_predictions_tlb <- lapply(selected_models_tlb, function(model) {
+  exp(log(tlb_training) - residuals(model))
+})
+
+# Test predictions on the original birth-count scale
+test_predictions_tlb <- lapply(selected_models_tlb, function(model) {
+  exp(predict(model, n.ahead = length(tlb_test))$pred)
+})
+
+# Model names
+model_names_tlb <- names(selected_models_tlb)
+
+# Function to create separate training and test labels
+make_labels_tlb <- function(actual, predictions, set_name) {
+  
+  sapply(seq_along(selected_models_tlb), function(i) {
+    
+    actual_values <- as.numeric(actual)
+    predicted_values <- as.numeric(predictions[[i]])
+    
+    valid <- is.finite(actual_values) &
+      is.finite(predicted_values) &
+      actual_values != 0
+    
+    mape <- if (any(valid)) {
+      mean(
+        abs(
+          (actual_values[valid] - predicted_values[valid]) /
+            actual_values[valid]
+        )
+      ) * 100
+    } else {
+      NA_real_
+    }
+    
+    sprintf(
+      "%s | AIC: %.2f | %s MAPE: %.2f%%",
+      model_names_tlb[i],
+      AIC(selected_models_tlb[[i]]),
+      set_name,
+      mape
+    )
+  })
+}
+
+# Separate labels
+train_labels_tlb <- make_labels_tlb(
+  tlb_training,
+  train_predictions_tlb,
+  "Train"
+)
+
+test_labels_tlb <- make_labels_tlb(
+  tlb_test,
+  test_predictions_tlb,
+  "Test"
+)
+
+# Colours and line types
+colours_tlb <- rep(
+  c(
+    "blue", "red", "darkgreen", "purple",
+    "orange", "brown", "deeppink", "cyan4"
+  ),
+  length.out = length(selected_models_tlb)
+)
+
+line_types_tlb <- rep(
+  1:6,
+  length.out = length(selected_models_tlb)
+)
+
+# Horizontal axes
+use_years_tlb <- is.ts(tlb_training) && is.ts(tlb_test)
+
+if (use_years_tlb) {
+  train_years_tlb <- as.numeric(time(tlb_training))
+  test_years_tlb <- as.numeric(time(tlb_test))
+} else {
+  train_years_tlb <- seq_along(tlb_training)
+  test_years_tlb <- length(tlb_training) + seq_along(tlb_test)
+}
+
+# Function to draw each graph
+plot_predictions_tlb <- function(
+  actual, years, predictions, title, labels) {
+  
+  plot(
+    years,
+    as.numeric(actual),
+    type = "l",
+    col = "black",
+    lwd = 3,
+    ylim = range(
+      c(as.numeric(actual), unlist(predictions)),
+      finite = TRUE
+    ),
+    xlab = if (use_years_tlb) "Year" else "Observation",
+    ylab = "Total live births",
+    main = title
+  )
+  
+  for (i in seq_along(predictions)) {
+    lines(
+      years,
+      as.numeric(predictions[[i]]),
+      col = colours_tlb[i],
+      lty = line_types_tlb[i],
+      lwd = 2
+    )
+  }
+  
+  legend(
+    "bottomleft",
+    legend = c("Actual", labels),
+    col = c("black", colours_tlb),
+    lty = c(1, line_types_tlb),
+    lwd = c(3, rep(2, length(predictions))),
+    cex = 0.55,
+    bty = "n"
+  )
+}
+
+# Show training and test graphs side by side
+old_par_tlb <- par(no.readonly = TRUE)
+
+par(
+  mfrow = c(1, 2),
+  mar = c(4, 4, 3, 1)
+)
+
+plot_predictions_tlb(
+  tlb_training,
+  train_years_tlb,
+  train_predictions_tlb,
+  "Training: Actual vs Fitted",
+  train_labels_tlb
+)
+
+plot_predictions_tlb(
+  tlb_test,
+  test_years_tlb,
+  test_predictions_tlb,
+  "Test: Actual vs Prediction",
+  test_labels_tlb
+)
+
+# Restore previous plotting settings
+par(old_par_tlb)
+
+
+
+################### HK SEASONAL TFR ####################################
+x <- diff(tfr_training, 12)
+kpss.test(x)
+plot(x)
+acf(x)
+pacf(x)
+
+
+y <- diff(diff(tfr_training), 12)
+kpss.test(y)
+plot(y)
+acf(y, lag.max = 45)
+pacf(y, lag.max = 45)
+
+#############RUN MODEL ############################################################################################
+candidate_tfr_s <- arima( tfr_training,  order = c(5, 1, 3),  seasonal = list(order = c(0, 1, 0),period = 12 ))
+candidate_tfr_s
+
+fc <- predict(candidate_tfr_s, n.ahead = length(tfr_test))$pred
+train_fitted <- tfr_training - residuals(candidate_tfr_s)
+# Training accuracy
+accuracy(train_fitted, tfr_training)[, c("RMSE", "MAE", "MAPE")]
+#accuracy(fc, tfr_test)["Test set", ]
+accuracy(fc, tfr_test)[, c("RMSE", "MAE", "MAPE")]
+
+########## ACF PCF #################
+old_par_s_tfr <- par(mfrow = c(1, 2))
+acf(residuals(candidate_tfr_s), lag.max = 40, main = "ACF")
+pacf(residuals(candidate_tfr_s), lag.max = 40, main = "PACF")
+par(old_par_s_tfr)
+
+
+############################ PLOT PRDECTION TFR SARIMA ###################
+# Models to compare
+orders_s_tfr <- list(
+  c(5, 1, 0),
+  c(5, 1, 2),
+  c(5, 1, 3)
+)
+
+# Seasonal settings
+seasonal_order <- c(0, 1, 0)
+seasonal_period <- 12
+
+selected_names_s_tfr <- sapply(
+  orders_s_tfr,
+  function(x) paste0(
+    "SARIMA(", paste(x, collapse = ","), ")",
+    "(", paste(seasonal_order, collapse = ","), ")",
+    "[", seasonal_period, "]"
+  )
+)
+
+# Fit SARIMA models without log
+selected_models_s_tfr <- setNames(
+  lapply(orders_s_tfr, function(x) {
+    arima(
+      tfr_training,
+      order = x,
+      seasonal = list(
+        order = seasonal_order,
+        period = seasonal_period
+      ),
+      method = "ML",
+      optim.control = list(maxit = 2000)
+    )
+  }),
+  selected_names_s_tfr
+)
+
+# Check convergence: 0 means successful convergence
+print(sapply(selected_models_s_tfr, function(model) model$code))
+
+# Training fitted values
+train_predictions_s_tfr <- lapply(selected_models_s_tfr, function(model) {
+  tfr_training - residuals(model)
+})
+
+# Test predictions using predict()
+test_predictions_s_tfr <- lapply(selected_models_s_tfr, function(model) {
+  predict(model, n.ahead = length(tfr_test))$pred
+})
+
+# Colours and line types
+colours_s_tfr <- c("blue", "red", "darkgreen")
+line_types <- 1:3
+
+# Horizontal axes
+use_years_s_tfr <- is.ts(tfr_training) && is.ts(tfr_test)
+
+if (use_years_s_tfr) {
+  train_years <- as.numeric(time(tfr_training))
+  test_years <- as.numeric(time(tfr_test))
+} else {
+  train_years <- seq_along(tfr_training)
+  test_years <- length(tfr_training) + seq_along(tfr_test)
+}
+
+# Plotting function
+plot_predictions_s_tfr <- function(actual, years, predictions, title, set) {
+  
+  actual <- as.numeric(actual)
+  
+  model_labels_s_tfr <- sapply(seq_along(selected_models_s_tfr), function(i) {
+    
+    predicted <- as.numeric(predictions[[i]])
+    
+    valid <- is.finite(actual) &
+      is.finite(predicted) &
+      actual != 0
+    
+    mape <- mean(
+      abs((actual[valid] - predicted[valid]) / actual[valid])
+    ) * 100
+    
+    sprintf(
+      "%s | AIC: %.2f | %s MAPE: %.2f%%",
+      selected_names_s_tfr[i],
+      AIC(selected_models_s_tfr[[i]]),
+      set,
+      mape
+    )
+  })
+  
+  plot(
+    years, actual,
+    type = "l",
+    col = "black",
+    lwd = 3,
+    ylim = range(c(actual, unlist(predictions)), finite = TRUE),
+    xlab = if (use_years_s_tfr) "Year" else "Observation",
+    ylab = "Total fertility rate",
+    main = title
+  )
+  
+  for (i in seq_along(predictions)) {
+    lines(
+      years,
+      as.numeric(predictions[[i]]),
+      col = colours_s_tfr[i],
+      lty = line_types[i],
+      lwd = 2
+    )
+  }
+  
+  legend(
+    "bottomleft",
+    legend = c("Actual", model_labels_s_tfr),
+    col = c("black", colours_s_tfr),
+    lty = c(1, line_types),
+    lwd = c(3, 2, 2, 2),
+    cex = 0.5,
+    bty = "n"
+  )
+}
+
+# Training and test graphs on one screen
+old_par_s_tfr <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+plot_predictions_s_tfr(
+  tfr_training, train_years, train_predictions_s_tfr,
+  "Training: Actual vs Fitted", "Train"
+)
+
+plot_predictions_s_tfr(
+  tfr_test, test_years, test_predictions_s_tfr,
+  "Test: Actual vs Prediction", "Test"
+)
+
+par(old_par_s_tfr)
+
+############################# HK SARIMA TLB ###########################
+
+x_tlb <- diff(tlb_training, 12)
+kpss.test(x_tlb)
+plot(x_tlb)
+acf(x_tlb, lag=45)
+pacf(x_tlb, lag=45)
+
+
+y_tlb <- diff(diff(tlb_training), 12)
+kpss.test(y_tlb)
+plot(y_tlb)
+acf(y_tlb)
+pacf(y_tlb)
+
+
+
+# RUN MODEL
+candidate_tlb_s <- arima(  log(tlb_training),  order = c(5, 0, 0),  seasonal = list(order = c(0, 1, 1), period = 12))
+candidate_tlb_s
+
+# Predict and convert back to birth counts
+predicted_births_tlb <- exp(  predict(candidate_tlb_s, n.ahead = length(tlb_test))$pred)
+
+# Test accuracy on the original scale
+accuracy(predicted_births_tlb, tlb_test)[, c("RMSE", "MAE", "MAPE")]
+
+# Residual ACF and PACF on one screen
+res <- na.omit(residuals(candidate_tlb_s))
+
+########### ACF PACF ###############
+old_par_s_tlb <- par(mfrow = c(1, 2))
+acf(  res, lag.max = 40,   main = "ACF-c(5, 0, 0),c(0, 1, 1)")
+pacf(  res, lag.max = 40,  main = "PACF-c(5, 0, 0),c(0, 1, 1)")
+par(old_par_s_tlb)
+
+# RUN MODEL
+candidate_tlb_s_1 <- arima(  log(tlb_training),  order = c(5, 0, 0),  seasonal = list(order = c(1, 1, 0), period = 12))
+candidate_tlb_s_1
+
+# Predict and convert back to birth counts
+predicted_births_tlb_1 <- exp(  predict(candidate_tlb_s_1, n.ahead = length(tlb_test))$pred)
+
+# Test accuracy on the original scale
+accuracy(predicted_births_tlb_1, tlb_test)[, c("RMSE", "MAE", "MAPE")]
+
+# Residual ACF and PACF on one screen
+res <- na.omit(residuals(candidate_tlb_s_1))
+
+########### ACF PACF ###############
+old_par_s_tlb <- par(mfrow = c(1, 2))
+acf(  res, lag.max = 40,   main = "ACF-c(5, 0, 0),c(1, 1, 0)")
+pacf(  res, lag.max = 40,  main = "PACF-c(5, 0, 0),c(1, 1, 0)")
+par(old_par_s_tlb)
+
+################ PLOT #########################################
+
+# Models to compare
+orders_s_tlb <- list(
+  c(5, 0, 0),
+  c(5, 0, 1),
+  c(5, 0, 2),
+  c(5, 0, 0),
+  c(5, 0, 1),
+  c(5, 0, 2)
+  
+)
+
+# Seasonal settings
+seasonal_orders_s_tlb <- list(
+  c(0, 1, 1),
+  c(0, 1, 1),
+  c(0, 1, 1),
+  c(1, 1, 0),
+  c(1, 1, 0),
+  c(1, 1, 0)
+  
+)
+seasonal_period <- 12
+
+selected_names_s_tlb <- sapply(
+  seq_along(orders_s_tlb),
+  function(i) {
+    paste0(
+      "SARIMA(",
+      paste(orders_s_tlb[[i]], collapse = ","),
+      ")(",
+      paste(seasonal_orders_s_tlb[[i]], collapse = ","),
+      ")[",
+      seasonal_period,
+      "]"
+    )
+  }
+)
+
+# Fit log SARIMA models
+selected_models_s_tlb <- setNames(
+  lapply(seq_along(orders_s_tlb), function(i) {
+    arima(
+      log(tlb_training),
+      order = orders_s_tlb[[i]],
+      seasonal = list(
+        order = seasonal_orders_s_tlb[[i]],
+        period = seasonal_period
+      ),
+      method = "ML",
+      optim.control = list(maxit = 2000)
+    )
+  }),
+  selected_names_s_tlb
+)
+
+# Check convergence: 0 means successful convergence
+print(sapply(selected_models_s_tlb, function(model) model$code))
+
+# Training fitted values: back to birth counts
+train_predictions_s_tlb <- lapply(selected_models_s_tlb, function(model) {
+  exp(log(tlb_training) - residuals(model))
+})
+
+# Test predictions: back to birth counts
+test_predictions_s_tlb <- lapply(selected_models_s_tlb, function(model) {
+  exp(
+    predict(model, n.ahead = length(tlb_test))$pred
+  )
+})
+
+# Colours and line types
+colours_s_tlb <- c(
+  "blue",
+  "red",
+  "darkgreen",
+  "brown",
+  "purple",
+  "orange"
+)
+
+line_types <- c(1, 2, 3, 1, 2, 3)
+
+# Horizontal axes
+use_years_s_tlb <- is.ts(tlb_training) && is.ts(tlb_test)
+
+if (use_years_s_tlb) {
+  train_years <- as.numeric(time(tlb_training))
+  test_years <- as.numeric(time(tlb_test))
+} else {
+  train_years <- seq_along(tlb_training)
+  test_years <- length(tlb_training) + seq_along(tlb_test)
+}
+
+# Plotting function
+plot_predictions_s_tlb <- function(actual, years, predictions, title, set) {
+  
+  actual <- as.numeric(actual)
+  
+  model_labels_s_tlb <- sapply(seq_along(selected_models_s_tlb), function(i) {
+    
+    predicted <- as.numeric(predictions[[i]])
+    
+    valid <- is.finite(actual) &
+      is.finite(predicted) &
+      actual != 0
+    
+    mape <- mean(
+      abs((actual[valid] - predicted[valid]) / actual[valid])
+    ) * 100
+    
+    sprintf(
+      "%s | AIC: %.2f | %s MAPE: %.2f%%",
+      selected_names_s_tlb[i],
+      AIC(selected_models_s_tlb[[i]]),
+      set,
+      mape
+    )
+  })
+  
+  plot(
+    years, actual,
+    type = "l",
+    col = "black",
+    lwd = 3,
+    ylim = range(c(actual, unlist(predictions)), finite = TRUE),
+    xlab = if (use_years_s_tlb) "Year" else "Observation",
+    ylab = "Total live births",
+    main = title
+  )
+  
+  for (i in seq_along(predictions)) {
+    lines(
+      years,
+      as.numeric(predictions[[i]]),
+      col = colours_s_tlb[i],
+      lty = line_types[i],
+      lwd = 2
+    )
+  }
+  
+  legend(
+    "bottomleft",
+    legend = c("Actual", model_labels_s_tlb),
+    col = c("black", colours_s_tlb),
+    lty = c(1, line_types),
+    lwd = c(3, rep(2, length(selected_models_s_tlb))),
+    cex = 0.45,
+    bty = "n"
+  )
+}
+
+# Training and test graphs on one screen
+old_par_s_tlb <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+plot_predictions_s_tlb(
+  tlb_training, train_years, train_predictions_s_tlb,
+  "Training: Actual vs Fitted", "Train"
+)
+
+plot_predictions_s_tlb(
+  tlb_test, test_years, test_predictions_s_tlb,
+  "Test: Actual vs Prediction", "Test"
+)
+
+par(old_par_s_tlb)
+
+################# THIS FOR MANUAL ERROR CALCULATIOn USE IF REQUIRE DONT DELETE #################
+
+# actual <- as.numeric(tfr_test)
+# predicted <- as.numeric(fc)
+# errors <- actual - predicted
+# 
+# c(
+#   RMSE = sqrt(mean(errors^2)),
+#   MAE = mean(abs(errors)),
+#   MAPE = mean(abs(errors / actual)) * 100
+# )
