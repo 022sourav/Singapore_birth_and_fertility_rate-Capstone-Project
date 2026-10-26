@@ -844,6 +844,7 @@ write.csv(
 ##############################################################
 #ARIMA MODEL - TFR
 
+<<<<<<< HEAD
 tfr_train <- train_data %>%
   filter(variable == "Total_Fertility_Rate_TFR") %>%
   arrange(year)
@@ -1755,3 +1756,5 @@ par(old_par_s_tlb)
 #   MAE = mean(abs(errors)),
 #   MAPE = mean(abs(errors / actual)) * 100
 # )
+=======
+>>>>>>> 263f2e050c2c3376b962723153d220673466a82a
