@@ -1746,7 +1746,7 @@ plot_predictions_s_tlb(
 par(old_par_s_tlb)
 
 ################# THIS FOR MANUAL ERROR CALCULATIOn USE IF REQUIRE DONT DELETE #################
-
+# 
 # actual <- as.numeric(tfr_test)
 # predicted <- as.numeric(fc)
 # errors <- actual - predicted
@@ -1756,5 +1756,5 @@ par(old_par_s_tlb)
 #   MAE = mean(abs(errors)),
 #   MAPE = mean(abs(errors / actual)) * 100
 # )
-=======
->>>>>>> 263f2e050c2c3376b962723153d220673466a82a
+
+
