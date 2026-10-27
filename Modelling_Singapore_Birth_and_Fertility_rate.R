@@ -844,7 +844,6 @@ write.csv(
 ##############################################################
 #ARIMA MODEL - TFR
 
-<<<<<<< HEAD
 tfr_train <- train_data %>%
   filter(variable == "Total_Fertility_Rate_TFR") %>%
   arrange(year)
