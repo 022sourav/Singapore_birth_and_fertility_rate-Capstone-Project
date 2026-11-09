@@ -1756,4 +1756,943 @@ par(old_par_s_tlb)
 #   MAPE = mean(abs(errors / actual)) * 100
 # )
 
+# Machine Learning Models
 
+########## NEURAL NETWORK MACHINE LEARNING MODEL TFR ################
+
+old_par <- par(mfrow = c(1, 2))
+
+acf(tfr_training,lag=40, main = "ACF: Original TFR")
+pacf(tfr_training,lag=40, main = "PACF: Original TFR")
+
+par(old_par)
+####################################################
+set.seed(123)
+
+candidate_tfr_ml <- nnetar(
+  tfr_training,
+  p = 10,           # Use the previous years as inputs
+  size = 3,        # Hidden neurons
+  repeats = 20,    # Average 20 fitted networks
+  seasonal = FALSE
+)
+
+candidate_tfr_ml
+
+########## FORECAST ##################################
+fc_ml <- forecast(
+  candidate_tfr_ml,
+  h = length(tfr_test)
+)
+
+train_fitted_ml <- fitted(candidate_tfr_ml)
+
+########## TRAINING ACCURACY ##########################
+accuracy(
+  train_fitted_ml,
+  tfr_training
+)[, c("RMSE", "MAE", "MAPE")]
+
+########## TEST ACCURACY ##############################
+accuracy(
+  fc_ml,
+  tfr_test
+)["Test set", c("RMSE", "MAE", "MAPE")]
+
+########## RESIDUAL ACF AND PACF #######################
+res_ml <- na.omit(residuals(candidate_tfr_ml))
+
+old_par <- par(mfrow = c(1, 2))
+
+acf(
+  res_ml,
+  lag.max = 40,
+  main = "Residual ACF: Neural Network"
+)
+
+pacf(
+  res_ml,
+  lag.max = 40,
+  main = "Residual PACF: Neural Network"
+)
+
+par(old_par)
+############### RESULT ########################################################
+##############################################################################
+
+############### PLOT ##########################################################
+
+
+########## SETTINGS TO COMPARE ########################
+settings <- list(
+  c(p = 10,  size = 3, repeats = 20),
+  c(p = 11, size = 3, repeats = 20)
+)
+
+########## MODEL NAMES ###############################
+selected_names <- sapply(settings, function(x) {
+  sprintf(
+    "NNAR(p=%d, size=%d, repeats=%d)",
+    x["p"], x["size"], x["repeats"]
+  )
+})
+
+########## FIT NEURAL NETWORK MODELS ##################
+selected_models <- setNames(
+  lapply(settings, function(x) {
+    set.seed(123)
+    
+    nnetar(
+      tfr_training,
+      p = unname(x["p"]),
+      size = unname(x["size"]),
+      repeats = unname(x["repeats"]),
+      seasonal = FALSE
+    )
+  }),
+  selected_names
+)
+
+########## TRAINING FITTED VALUES #####################
+train_predictions <- lapply(selected_models, function(model) {
+  fitted(model)
+})
+
+########## TEST PREDICTIONS ###########################
+test_predictions <- lapply(selected_models, function(model) {
+  forecast(model, h = length(tfr_test))$mean
+})
+
+########## COLOURS AND LINE TYPES #####################
+colours <- c("blue", "red", "darkgreen")
+line_types <- 1:3
+
+########## HORIZONTAL AXES ############################
+use_years <- is.ts(tfr_training) && is.ts(tfr_test)
+
+if (use_years) {
+  train_years <- as.numeric(time(tfr_training))
+  test_years <- as.numeric(time(tfr_test))
+} else {
+  train_years <- seq_along(tfr_training)
+  test_years <- length(tfr_training) + seq_along(tfr_test)
+}
+
+########## PLOTTING FUNCTION ##########################
+plot_predictions <- function(actual, years, predictions, title, set) {
+  
+  actual <- as.numeric(actual)
+  
+  model_labels <- sapply(seq_along(predictions), function(i) {
+    
+    predicted <- as.numeric(predictions[[i]])
+    
+    valid <- is.finite(actual) &
+      is.finite(predicted) &
+      actual != 0
+    
+    mape <- mean(
+      abs((actual[valid] - predicted[valid]) / actual[valid])
+    ) * 100
+    
+    sprintf(
+      "%s | %s MAPE: %.2f%%",
+      selected_names[i],
+      set,
+      mape
+    )
+  })
+  
+  plot(
+    years, actual,
+    type = "l",
+    col = "black",
+    lwd = 3,
+    ylim = range(c(actual, unlist(predictions)), finite = TRUE),
+    xlab = if (use_years) "Year" else "Observation",
+    ylab = "Total fertility rate",
+    main = title
+  )
+  
+  for (i in seq_along(predictions)) {
+    lines(
+      years,
+      as.numeric(predictions[[i]]),
+      col = colours[i],
+      lty = line_types[i],
+      lwd = 2
+    )
+  }
+  
+  legend(
+    "bottomleft",
+    legend = c("Actual", model_labels),
+    col = c("black", colours),
+    lty = c(1, line_types),
+    lwd = c(3, rep(2, length(predictions))),
+    cex = 0.55,
+    bty = "n"
+  )
+}
+
+########## TRAINING AND TEST GRAPHS ###################
+old_par <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+plot_predictions(
+  tfr_training, train_years, train_predictions,
+  "Training: Actual vs Fitted", "Train"
+)
+
+plot_predictions(
+  tfr_test, test_years, test_predictions,
+  "Test: Actual vs Prediction", "Test"
+)
+
+par(old_par)
+
+##########################################################
+########## TEST ACCURACY TABLE TFR ########################
+test_results <- do.call(
+  rbind,
+  lapply(seq_along(selected_models), function(i) {
+    
+    acc <- accuracy(
+      as.numeric(test_predictions[[i]]),
+      as.numeric(tfr_test)
+    )
+    
+    data.frame(
+      Model = selected_names[i],
+      RMSE = acc[1, "RMSE"],
+      MAE = acc[1, "MAE"],
+      MAPE = acc[1, "MAPE"]
+    )
+  })
+)
+
+########## SORT AND VIEW #############################
+test_results <- test_results[order(test_results$MAPE), ]
+rownames(test_results) <- NULL
+
+test_results
+##########################################################
+
+########## HK FIT LOG-TLB NEURAL NETWORK #################
+
+old_par <- par(mfrow = c(1, 2))
+
+acf(log(tlb_training),lag=40, main = "ACF: Original TLB")
+pacf(log(tlb_training),lag=40, main = "PACF: Original TLB")
+
+par(old_par)
+
+set.seed(123)
+candidate_tlb_ml <- nnetar(
+  tlb_training,
+  p = 6,          # Previous 12 years as inputs
+  P = 0,           # No seasonal inputs
+  size = 3,      # Hidden neurons
+  repeats = 30,
+  lambda = 0       # Log transformation
+)
+
+candidate_tlb_ml
+
+########## FORECAST ##################################
+# Automatically back-transformed to original birth counts
+fc_tlb_ml <- forecast(
+  candidate_tlb_ml,
+  h = length(tlb_test)
+)
+
+train_fitted_tlb_ml <- fitted(candidate_tlb_ml)
+
+########## TRAINING ACCURACY ##########################
+accuracy(
+  train_fitted_tlb_ml,
+  tlb_training
+)[, c("RMSE", "MAE", "MAPE")]
+
+########## TEST ACCURACY ##############################
+accuracy(
+  fc_tlb_ml,
+  tlb_test
+)["Test set", c("RMSE", "MAE", "MAPE")]
+
+########## RESIDUAL ACF AND PACF #######################
+
+# One residual series on the original birth-count scale
+res_tlb_ml <- na.omit(
+  residuals(candidate_tlb_ml, type = "response")
+)
+
+# Display one ACF and one PACF together
+old_par <- par(mfrow = c(1, 2), ask = FALSE)
+
+acf(
+  res_tlb_ml,
+  lag.max = 40,
+  main = "Residual ACF: Log-TLB Neural Network"
+)
+
+pacf(
+  res_tlb_ml,
+  lag.max = 40,
+  main = "Residual PACF: Log-TLB Neural Network"
+)
+
+# Restore previous plot layout
+par(old_par)
+
+############### PLOT #################################
+
+########## SETTINGS TO COMPARE ########################
+settings_tlb <- list(
+  c(p = 5, size = 3, repeats = 20),
+  c(p = 6, size = 3, repeats = 30),
+  c(p = 4, size = 3, repeats = 20)
+)
+
+########## MODEL NAMES ###############################
+selected_names_tlb <- sapply(settings_tlb, function(x) {
+  sprintf(
+    "Log-NNAR(p=%d, size=%d, repeats=%d)",
+    x["p"], x["size"], x["repeats"]
+  )
+})
+
+########## FIT NEURAL NETWORK MODELS ##################
+selected_models_tlb <- setNames(
+  lapply(settings_tlb, function(x) {
+    set.seed(123)
+    
+    nnetar(
+      tlb_training,
+      p = unname(x["p"]),
+      P = 0,
+      size = unname(x["size"]),
+      repeats = unname(x["repeats"]),
+      lambda = 0
+    )
+  }),
+  selected_names_tlb
+)
+
+########## TRAINING FITTED VALUES #####################
+# Original birth-count scale
+train_predictions_tlb <- lapply(
+  selected_models_tlb,
+  function(model) fitted(model)
+)
+
+########## TEST PREDICTIONS ###########################
+# Original birth-count scale
+test_predictions_tlb <- lapply(
+  selected_models_tlb,
+  function(model) {
+    forecast(model, h = length(tlb_test))$mean
+  }
+)
+
+########## COLOURS AND LINE TYPES #####################
+colours_tlb <- c("blue", "red", "darkgreen")
+line_types_tlb <- 1:3
+
+########## HORIZONTAL AXES ############################
+use_years_tlb <- is.ts(tlb_training) && is.ts(tlb_test)
+
+if (use_years_tlb) {
+  train_years_tlb <- as.numeric(time(tlb_training))
+  test_years_tlb <- as.numeric(time(tlb_test))
+} else {
+  train_years_tlb <- seq_along(tlb_training)
+  test_years_tlb <- length(tlb_training) + seq_along(tlb_test)
+}
+
+########## PLOTTING FUNCTION ##########################
+plot_predictions_tlb <- function(
+    actual, years, predictions, title, set) {
+  
+  actual <- as.numeric(actual)
+  
+  model_labels <- sapply(seq_along(predictions), function(i) {
+    
+    predicted <- as.numeric(predictions[[i]])
+    
+    valid <- is.finite(actual) &
+      is.finite(predicted) &
+      actual != 0
+    
+    mape <- mean(
+      abs((actual[valid] - predicted[valid]) / actual[valid])
+    ) * 100
+    
+    sprintf(
+      "%s | %s MAPE: %.2f%%",
+      selected_names_tlb[i],
+      set,
+      mape
+    )
+  })
+  
+  plot(
+    years, actual,
+    type = "l",
+    col = "black",
+    lwd = 3,
+    ylim = range(c(actual, unlist(predictions)), finite = TRUE),
+    xlab = if (use_years_tlb) "Year" else "Observation",
+    ylab = "Total live births",
+    main = title
+  )
+  
+  for (i in seq_along(predictions)) {
+    lines(
+      years,
+      as.numeric(predictions[[i]]),
+      col = colours_tlb[i],
+      lty = line_types_tlb[i],
+      lwd = 2
+    )
+  }
+  
+  legend(
+    "bottomleft",
+    legend = c("Actual", model_labels),
+    col = c("black", colours_tlb),
+    lty = c(1, line_types_tlb),
+    lwd = c(3, rep(2, length(predictions))),
+    cex = 0.55,
+    bty = "n"
+  )
+}
+
+########## TRAINING AND TEST GRAPHS ###################
+old_par <- par(
+  mfrow = c(1, 2),
+  mar = c(4, 4, 3, 1),
+  ask = FALSE
+)
+
+plot_predictions_tlb(
+  tlb_training,
+  train_years_tlb,
+  train_predictions_tlb,
+  "Training: Actual vs Fitted",
+  "Train"
+)
+
+plot_predictions_tlb(
+  tlb_test,
+  test_years_tlb,
+  test_predictions_tlb,
+  "Test: Actual vs Prediction",
+  "Test"
+)
+
+par(old_par)
+########## TEST ACCURACY TABLE TFR ########################
+test_results <- do.call(
+  rbind,
+  lapply(seq_along(selected_models_tlb), function(i) {
+    
+    acc <- accuracy(
+      as.numeric(test_predictions_tlb[[i]]),
+      as.numeric(tlb_test)
+    )
+    
+    data.frame(
+      Model = selected_names_tlb[i],
+      RMSE = acc[1, "RMSE"],
+      MAE = acc[1, "MAE"],
+      MAPE = acc[1, "MAPE"]
+    )
+  })
+)
+
+########## SORT AND VIEW #############################
+test_results <- test_results[order(test_results$MAPE), ]
+rownames(test_results) <- NULL
+
+test_results
+##########################################################
+########## HK TRAINING DATA: 12-YEAR CYCLE TFR ###############
+old_par <- par(mfrow = c(1, 2))
+
+acf(tfr_training,lag=45, main = "ACF: Original TFR")
+pacf(tfr_training,lag=45, main = "PACF: Original TFR")
+
+par(old_par)
+
+
+tfr_training_12 <- ts(
+  as.numeric(tfr_training),
+  frequency = 12
+)
+
+########## RUN MODEL #################################
+set.seed(123)
+
+candidate_tfr_ml <- nnetar(
+  tfr_training_12,
+  p = 12,
+  P = 1,
+  size=6,
+  repeats = 20
+)
+
+candidate_tfr_ml
+########## TRAINING ACCURACY #########################
+train_fit <- fitted(candidate_tfr_ml)
+
+train_accuracy <- accuracy(
+  as.numeric(train_fit),
+  as.numeric(tfr_training_12)
+)[, c("RMSE", "MAE", "MAPE")]
+
+train_accuracy
+
+########## FORECAST ##################################
+fc_ml <- forecast(
+  candidate_tfr_ml,
+  h = length(tfr_test)
+)
+
+########## TEST ACCURACY #############################
+accuracy(
+  as.numeric(fc_ml$mean),
+  as.numeric(tfr_test)
+)[, c("RMSE", "MAE", "MAPE")]
+
+########## RESIDUAL ACF AND PACF ######################
+# Numeric vector makes lag 12 display as 12 years
+res_ml <- as.numeric(residuals(candidate_tfr_ml))
+res_ml <- res_ml[is.finite(res_ml)]
+
+max_lag <- min(40, length(res_ml) - 1)
+
+old_par <- par(mfrow = c(1, 2))
+
+acf(
+  res_ml,
+  lag.max = max_lag,
+  main = "Residual ACF: NNAR, 12-year cycle",
+  xlab = "Lag (years)"
+)
+
+pacf(
+  res_ml,
+  lag.max = max_lag,
+  main = "Residual PACF: NNAR, 12-year cycle",
+  xlab = "Lag (years)"
+)
+
+par(old_par)
+
+################### PLOT ##################################
+
+########## SETTINGS TO COMPARE ########################
+########## SETTINGS TO COMPARE ########################
+settings <- list(
+  c(p = 11, P = 1, size = 6, repeats = 20),
+  c(p = 12, P = 1, size = 6, repeats = 20)
+)
+
+########## FIT NEURAL NETWORK MODELS ##################
+selected_models <- lapply(settings, function(x) {
+  set.seed(123)
+  
+  nnetar(
+    tfr_training_12,
+    p = unname(x["p"]),
+    P = unname(x["P"]),
+    size = unname(x["size"]),
+    repeats = unname(x["repeats"])
+  )
+})
+
+########## MODEL NAMES ###############################
+selected_names <- sapply(seq_along(selected_models), function(i) {
+  model <- selected_models[[i]]
+  
+  sprintf(
+    "NNAR(%d,%d,%d)[12] | repeats=%d",
+    model$p,
+    model$P,
+    model$size,
+    settings[[i]]["repeats"]
+  )
+})
+
+names(selected_models) <- selected_names
+########## TRAINING FITTED VALUES #####################
+train_predictions <- lapply(selected_models, function(model) {
+  as.numeric(fitted(model))
+})
+
+########## TEST PREDICTIONS ###########################
+test_predictions <- lapply(selected_models, function(model) {
+  as.numeric(forecast(model, h = length(tfr_test))$mean)
+})
+
+########## COLOURS AND LINE TYPES #####################
+colours <- c("blue", "red", "darkgreen")
+line_types <- 1:3
+
+########## ORIGINAL YEAR AXES #########################
+use_years <- is.ts(tfr_training) && is.ts(tfr_test)
+
+if (use_years) {
+  train_years <- as.numeric(time(tfr_training))
+  test_years <- as.numeric(time(tfr_test))
+} else {
+  train_years <- seq_along(tfr_training)
+  test_years <- length(tfr_training) + seq_along(tfr_test)
+}
+
+########## PLOTTING FUNCTION ##########################
+plot_predictions <- function(actual, years, predictions, title, set) {
+  
+  actual <- as.numeric(actual)
+  
+  model_labels <- sapply(seq_along(predictions), function(i) {
+    
+    predicted <- as.numeric(predictions[[i]])
+    
+    valid <- is.finite(actual) &
+      is.finite(predicted) &
+      actual != 0
+    
+    mape <- mean(
+      abs((actual[valid] - predicted[valid]) / actual[valid])
+    ) * 100
+    
+    sprintf(
+      "%s | %s MAPE: %.2f%%",
+      selected_names[i],
+      set,
+      mape
+    )
+  })
+  
+  plot(
+    years, actual,
+    type = "l",
+    col = "black",
+    lwd = 3,
+    ylim = range(c(actual, unlist(predictions)), finite = TRUE),
+    xlab = if (use_years) "Year" else "Observation",
+    ylab = "Total fertility rate",
+    main = title
+  )
+  
+  for (i in seq_along(predictions)) {
+    lines(
+      years,
+      as.numeric(predictions[[i]]),
+      col = colours[i],
+      lty = line_types[i],
+      lwd = 2
+    )
+  }
+  
+  legend(
+    "bottomleft",
+    legend = c("Actual", model_labels),
+    col = c("black", colours),
+    lty = c(1, line_types),
+    lwd = c(3, rep(2, length(predictions))),
+    cex = 0.55,
+    bty = "n"
+  )
+}
+
+########## TRAINING AND TEST GRAPHS ###################
+old_par <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+plot_predictions(
+  tfr_training, train_years, train_predictions,
+  "Training: Actual vs Fitted", "Train"
+)
+
+plot_predictions(
+  tfr_test, test_years, test_predictions,
+  "Test: Actual vs Prediction", "Test"
+)
+
+par(old_par)
+########## TEST ACCURACY TABLE TFR ########################
+test_results <- do.call(
+  rbind,
+  lapply(seq_along(selected_models), function(i) {
+    
+    acc <- accuracy(
+      as.numeric(test_predictions[[i]]),
+      as.numeric(tfr_test)
+    )
+    
+    data.frame(
+      Model = selected_names[i],
+      RMSE = acc[1, "RMSE"],
+      MAE = acc[1, "MAE"],
+      MAPE = acc[1, "MAPE"]
+    )
+  })
+)
+
+########## SORT AND VIEW #############################
+test_results <- test_results[order(test_results$MAPE), ]
+rownames(test_results) <- NULL
+
+test_results
+##########################################################
+########## HK TRAINING DATA: 12-YEAR CYCLE TLB #########
+old_par <- par(mfrow = c(1, 2))
+
+acf(tlb_training,lag=45, main = "ACF: Original TLB")
+pacf(tlb_training,lag=45, main = "PACF: Original TLB")
+
+par(old_par)
+
+# Use original positive birth counts
+tlb_training_12 <- ts(
+  as.numeric(tlb_training),
+  frequency = 12
+)
+
+########## RUN LOG MODEL #############################
+set.seed(123)
+
+candidate_tlb_ml <- nnetar(
+  tlb_training_12,
+  p = 9,
+  P = 1,
+  size = 3,
+  repeats = 20,
+  lambda = 0
+)
+
+candidate_tlb_ml
+
+########## FORECAST ##################################
+# Automatically returns to original birth-count scale
+fc_tlb_ml <- forecast(
+  candidate_tlb_ml,
+  h = length(tlb_test)
+)
+
+########## TEST ACCURACY #############################
+accuracy(
+  as.numeric(fc_tlb_ml$mean),
+  as.numeric(tlb_test)
+)[, c("RMSE", "MAE", "MAPE")]
+
+########## RESIDUAL ACF AND PACF ######################
+# Response residuals give ONE series on original scale
+res_tlb_ml <- as.numeric(
+  residuals(candidate_tlb_ml, type = "response")
+)
+
+res_tlb_ml <- res_tlb_ml[is.finite(res_tlb_ml)]
+
+max_lag_tlb <- min(40, length(res_tlb_ml) - 1)
+
+old_par <- par(mfrow = c(1, 2), ask = FALSE)
+
+acf(
+  res_tlb_ml,
+  lag.max = max_lag_tlb,
+  main = "Residual ACF: Log-NNAR, 12-year cycle",
+  xlab = "Lag (years)"
+)
+
+pacf(
+  res_tlb_ml,
+  lag.max = max_lag_tlb,
+  main = "Residual PACF: Log-NNAR, 12-year cycle",
+  xlab = "Lag (years)"
+)
+
+par(old_par)
+
+################### PLOT #############################
+
+########## SETTINGS TO COMPARE ########################
+settings_tlb <- list(
+  c(p = 6, P = 1, size = 3, repeats = 20),
+  c(p = 8, P = 1, size = 3, repeats = 20),
+  c(p = 9, P = 1, size = 3, repeats = 20)
+)
+
+########## FIT LOG NEURAL NETWORK MODELS ##############
+selected_models_tlb <- lapply(settings_tlb, function(x) {
+  set.seed(123)
+  
+  nnetar(
+    tlb_training_12,
+    p = unname(x["p"]),
+    P = unname(x["P"]),
+    size = unname(x["size"]),
+    repeats = unname(x["repeats"]),
+    lambda = 0
+  )
+})
+
+########## MODEL LABELS ###############################
+selected_names_tlb <- sapply(seq_along(selected_models_tlb), function(i) {
+  model <- selected_models_tlb[[i]]
+  
+  sprintf(
+    "Log-NNAR(%d,%d,%d)[12] | repeats=%d",
+    model$p,
+    model$P,
+    model$size,
+    settings_tlb[[i]]["repeats"]
+  )
+})
+
+names(selected_models_tlb) <- selected_names_tlb
+
+########## TRAINING FITTED VALUES #####################
+# Original birth-count scale
+train_predictions_tlb <- lapply(
+  selected_models_tlb,
+  function(model) {
+    as.numeric(fitted(model))
+  }
+)
+
+########## TEST PREDICTIONS ###########################
+# Original birth-count scale
+test_predictions_tlb <- lapply(
+  selected_models_tlb,
+  function(model) {
+    as.numeric(
+      forecast(model, h = length(tlb_test))$mean
+    )
+  }
+)
+
+########## COLOURS AND LINE TYPES #####################
+colours_tlb <- c("blue", "red","green")
+line_types_tlb <- 1:3
+
+########## ORIGINAL YEAR AXES #########################
+use_years_tlb <- is.ts(tlb_training) && is.ts(tlb_test)
+
+if (use_years_tlb) {
+  train_years_tlb <- as.numeric(time(tlb_training))
+  test_years_tlb <- as.numeric(time(tlb_test))
+} else {
+  train_years_tlb <- seq_along(tlb_training)
+  test_years_tlb <- length(tlb_training) + seq_along(tlb_test)
+}
+
+########## PLOTTING FUNCTION ##########################
+plot_predictions_tlb <- function(
+    actual, years, predictions, title, set) {
+  
+  actual <- as.numeric(actual)
+  
+  model_labels <- sapply(seq_along(predictions), function(i) {
+    
+    predicted <- as.numeric(predictions[[i]])
+    
+    valid <- is.finite(actual) &
+      is.finite(predicted) &
+      actual != 0
+    
+    mape <- mean(
+      abs((actual[valid] - predicted[valid]) / actual[valid])
+    ) * 100
+    
+    sprintf(
+      "%s | %s MAPE: %.2f%%",
+      selected_names_tlb[i],
+      set,
+      mape
+    )
+  })
+  
+  plot(
+    years, actual,
+    type = "l",
+    col = "black",
+    lwd = 3,
+    ylim = range(c(actual, unlist(predictions)), finite = TRUE),
+    xlab = if (use_years_tlb) "Year" else "Observation",
+    ylab = "Total live births",
+    main = title
+  )
+  
+  for (i in seq_along(predictions)) {
+    lines(
+      years,
+      as.numeric(predictions[[i]]),
+      col = colours_tlb[i],
+      lty = line_types_tlb[i],
+      lwd = 2
+    )
+  }
+  
+  legend(
+    "bottomleft",
+    legend = c("Actual", model_labels),
+    col = c("black", colours_tlb),
+    lty = c(1, line_types_tlb),
+    lwd = c(3, rep(2, length(predictions))),
+    cex = 0.55,
+    bty = "n"
+  )
+}
+
+########## TRAINING AND TEST GRAPHS ###################
+old_par <- par(
+  mfrow = c(1, 2),
+  mar = c(4, 4, 3, 1),
+  ask = FALSE
+)
+
+plot_predictions_tlb(
+  tlb_training,
+  train_years_tlb,
+  train_predictions_tlb,
+  "Training: Actual vs Fitted",
+  "Train"
+)
+
+plot_predictions_tlb(
+  tlb_test,
+  test_years_tlb,
+  test_predictions_tlb,
+  "Test: Actual vs Prediction",
+  "Test"
+)
+
+par(old_par)
+
+######################
+########## TEST ACCURACY TABLE TFR ########################
+test_results <- do.call(
+  rbind,
+  lapply(seq_along(selected_models_tlb), function(i) {
+    
+    acc <- accuracy(
+      as.numeric(test_predictions_tlb[[i]]),
+      as.numeric(tlb_test)
+    )
+    
+    data.frame(
+      Model = selected_names_tlb[i],
+      RMSE = acc[1, "RMSE"],
+      MAE = acc[1, "MAE"],
+      MAPE = acc[1, "MAPE"]
+    )
+  })
+)
+
+########## SORT AND VIEW #############################
+test_results <- test_results[order(test_results$MAPE), ]
+rownames(test_results) <- NULL
+
+test_results
