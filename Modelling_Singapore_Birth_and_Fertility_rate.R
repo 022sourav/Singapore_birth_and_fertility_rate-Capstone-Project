@@ -4116,4 +4116,3 @@ plot_final_comparison(
   tlb_test, test_forecast_tlb_final,
   comparison_tlb_final, digits = "%.0f"
 )
-dev.off()
