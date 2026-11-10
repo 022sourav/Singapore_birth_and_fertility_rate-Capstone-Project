@@ -840,6 +840,235 @@ write.csv(
   "Output/EDA/Correlation_Matrix.csv"
 )
 
+# K-YEAR AVERAGE MODEL
+# ============================================================
+
+k <- 2       
+
+ma_label <- paste0(k, "-yr average")
+
+# SECTION 1: TOTAL FERTILITY RATE (TFR)
+# ============================================================
+
+
+# 1.1 PREPARE TFR DATA
+# ============================================================
+
+tfr_series <- data %>%
+  filter(variable == "Total_Fertility_Rate_TFR", !is.na(value),
+         year >= 1960, year <= 2025) %>%
+  arrange(year)
+
+tfr_x <- tfr_series$value
+tfr_n <- length(tfr_x)
+
+unique(diff(tfr_series$year))
+
+
+# 1.2 MANUAL K-YEAR AVERAGE MODEL
+# ============================================================
+
+tfr_ma <- rep(NA, tfr_n)
+
+for (t in (k + 1):tfr_n) {
+  total <- 0
+  for (j in 1:k) {
+    total <- total + tfr_x[t - j]
+  }
+  tfr_ma[t] <- total / k
+}
+
+tfr_series$forecast <- tfr_ma
+tfr_series$residual <- tfr_series$value - tfr_series$forecast
+
+# 1.3 SPLIT INTO TRAINING AND TESTING
+# ============================================================
+
+tfr_train <- tfr_series %>% filter(year <= 2012)
+tfr_test  <- tfr_series %>% filter(year >= 2013)
+
+print(tfr_test %>% select(year, actual = value, forecast, residual))
+
+# 1.4 ACCURACY: RMSE, MAE, MAPE
+# ============================================================
+
+tfr_tr <- tfr_train %>% filter(!is.na(forecast))
+tfr_te <- tfr_test  %>% filter(!is.na(forecast))
+
+tfr_accuracy <- rbind(
+  accuracy(tfr_tr$forecast, tfr_tr$value)[, c("RMSE", "MAE", "MAPE")],
+  accuracy(tfr_te$forecast, tfr_te$value)[, c("RMSE", "MAE", "MAPE")]
+)
+rownames(tfr_accuracy) <- c("Training", "Testing")
+
+cat("TFR accuracy, k =", k, "\n")
+print(round(tfr_accuracy, 4))
+
+
+# 1.5 ACF AND PACF - TRAINING
+# ============================================================
+
+tfr_res_train <- na.omit(tfr_train$residual)
+
+acf(tfr_res_train,  lag.max = 40, main = paste("ACF Training - TFR, k =", k))
+pacf(tfr_res_train, lag.max = 40, main = paste("PACF Training - TFR, k =", k))
+
+
+# 1.6 ACF AND PACF - TESTING
+# ============================================================
+
+tfr_res_test <- na.omit(tfr_test$residual)
+tfr_lag_test <- min(10, length(tfr_res_test) - 1)
+
+acf(tfr_res_test,  lag.max = tfr_lag_test, main = paste("ACF Testing - TFR, k =", k))
+pacf(tfr_res_test, lag.max = tfr_lag_test, main = paste("PACF Testing - TFR, k =", k))
+
+
+# 1.7 PLOT: TRAINING (1960 - 2012)
+# ============================================================
+
+ggplot(tfr_train, aes(x = year)) +
+  geom_line(aes(y = value, colour = "Actual"), linewidth = 1) +
+  geom_line(aes(y = forecast, colour = ma_label),
+            linetype = "dashed", linewidth = 1) +
+  scale_colour_manual(values = setNames(c("black", "red"),
+                                        c("Actual", ma_label))) +
+  labs(title = paste0("TFR: Actual vs ", k, "-Year Average Model (Training 1960-2012)"),
+       x = "Year", y = "Total Fertility Rate", colour = "") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+# 1.8 PLOT: TESTING (2013 - 2025)
+# ============================================================
+
+ggplot(tfr_test, aes(x = year)) +
+  geom_line(aes(y = value, colour = "Actual"), linewidth = 1) +
+  geom_point(aes(y = value, colour = "Actual"), size = 2) +
+  geom_line(aes(y = forecast, colour = ma_label),
+            linetype = "dashed", linewidth = 1) +
+  geom_point(aes(y = forecast, colour = ma_label), size = 2) +
+  scale_x_continuous(breaks = 2013:2025) +
+  scale_colour_manual(values = setNames(c("black", "red"),
+                                        c("Actual", ma_label))) +
+  labs(title = paste0("TFR: Actual vs ", k, "-Year Average Model (Testing 2013-2025)"),
+       x = "Year", y = "Total Fertility Rate", colour = "") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# SECTION 2: LOG TOTAL LIVE-BIRTHS (log TLB)
+# ============================================================
+
+
+# 2.1 PREPARE LOG TLB DATA
+# ============================================================
+
+tlb_series <- data %>%
+  filter(variable == "Total_Live_Births", !is.na(value),
+         year >= 1960, year <= 2025) %>%
+  arrange(year) %>%
+  mutate(log_value = log(value))
+
+tlb_x <- tlb_series$log_value
+tlb_n <- length(tlb_x)
+
+unique(diff(tlb_series$year))
+
+
+# 2.2 K-YEAR AVERAGE MODEL ON LOG(TLB)
+# ============================================================
+
+tlb_ma <- rep(NA, tlb_n)
+
+for (t in (k + 1):tlb_n) {
+  total <- 0
+  for (j in 1:k) {
+    total <- total + tlb_x[t - j]
+  }
+  tlb_ma[t] <- total / k
+}
+
+tlb_series$log_forecast <- tlb_ma
+tlb_series$log_residual <- tlb_series$log_value - tlb_series$log_forecast
+
+
+# 2.3 SPLIT INTO TRAINING AND TESTING
+# ============================================================
+
+tlb_train <- tlb_series %>% filter(year <= 2012)
+tlb_test  <- tlb_series %>% filter(year >= 2013)
+
+print(tlb_test %>% select(year, log_value, log_forecast, log_residual))
+
+
+# 2.4 ACCURACY ON LOG SCALE: RMSE, MAE, MAPE
+# ============================================================
+
+tlb_tr <- tlb_train %>% filter(!is.na(log_forecast))
+tlb_te <- tlb_test  %>% filter(!is.na(log_forecast))
+
+tlb_accuracy <- rbind(
+  accuracy(tlb_tr$log_forecast, tlb_tr$log_value)[, c("RMSE", "MAE", "MAPE")],
+  accuracy(tlb_te$log_forecast, tlb_te$log_value)[, c("RMSE", "MAE", "MAPE")]
+)
+rownames(tlb_accuracy) <- c("Training", "Testing")
+
+cat("log TLB accuracy, k =", k, "\n")
+print(round(tlb_accuracy, 4))
+
+
+# 2.5 ACF AND PACF - TRAINING
+# ============================================================
+
+tlb_res_train <- na.omit(tlb_train$log_residual)
+
+acf(tlb_res_train,  lag.max = 40, main = paste("ACF Training - log TLB, k =", k))
+pacf(tlb_res_train, lag.max = 40, main = paste("PACF Training - log TLB, k =", k))
+
+
+# 2.6 ACF AND PACF - TESTING
+# ============================================================
+
+tlb_res_test <- na.omit(tlb_test$log_residual)
+tlb_lag_test <- min(10, length(tlb_res_test) - 1)
+
+acf(tlb_res_test,  lag.max = tlb_lag_test, main = paste("ACF Testing - log TLB, k =", k))
+pacf(tlb_res_test, lag.max = tlb_lag_test, main = paste("PACF Testing - log TLB, k =", k))
+
+
+# 2.7 PLOT: TRAINING (1960 - 2012)
+# ============================================================
+
+ggplot(tlb_train, aes(x = year)) +
+  geom_line(aes(y = log_value, colour = "Actual"), linewidth = 1) +
+  geom_line(aes(y = log_forecast, colour = ma_label),
+            linetype = "dashed", linewidth = 1) +
+  scale_colour_manual(values = setNames(c("black", "red"),
+                                        c("Actual", ma_label))) +
+  labs(title = paste0("log TLB: Actual vs ", k, "-Year Average Model (Training 1960-2012)"),
+       x = "Year", y = "log(Total Live-Births)", colour = "") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+# 2.8 PLOT: TESTING (2013 - 2025)
+# ============================================================
+
+ggplot(tlb_test, aes(x = year)) +
+  geom_line(aes(y = log_value, colour = "Actual"), linewidth = 1) +
+  geom_point(aes(y = log_value, colour = "Actual"), size = 2) +
+  geom_line(aes(y = log_forecast, colour = ma_label),
+            linetype = "dashed", linewidth = 1) +
+  geom_point(aes(y = log_forecast, colour = ma_label), size = 2) +
+  scale_x_continuous(breaks = 2013:2025) +
+  scale_colour_manual(values = setNames(c("black", "red"),
+                                        c("Actual", ma_label))) +
+  labs(title = paste0("log TLB: Actual vs ", k, "-Year Average Model (Testing 2013-2025)"),
+       x = "Year", y = "log(Total Live-Births)", colour = "") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1))
 
 ##############################################################
 #ARIMA MODEL - TFR
@@ -897,6 +1126,8 @@ plot(tfr_diff2,
 acf(tfr_diff2, lag.max = 40, main = "ACF of second differenced TFR")
 
 pacf(tfr_diff2, lag.max = 40, main = "PACF of second differenced TFR")
+
+
 
 
 #########  TFR ARIMA ############################
@@ -3876,3 +4107,15 @@ plot_final_comparison(
   comparison_tlb_final, digits = "%.0f"
 )
 
+<<<<<<< HEAD
+=======
+# TLB - save as PNG
+png("Output/Final_Comparison/Best_Models_TLB.png",
+    width = 14, height = 6, units = "in", res = 300)
+plot_final_comparison(
+  "Total Live-Births (TLB)", "Total Live-Births", model_names_tlb_final,
+  tlb_training, train_fitted_tlb_final,
+  tlb_test, test_forecast_tlb_final,
+  comparison_tlb_final, digits = "%.0f"
+)
+>>>>>>> bf593a21d0591851e875ac4eb7e853d1ee469330
