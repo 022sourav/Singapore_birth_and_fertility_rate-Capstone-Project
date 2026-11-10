@@ -3598,9 +3598,9 @@ train_years_final <- as.numeric(time(tfr_training))   # 1960 - 2012
 test_years_final  <- as.numeric(time(tfr_test))       # 2013 - 2025
 
 # Same colour and line type for each model type in every graph
-model_colours_final <- c(ARIMA = "blue", SARIMA = "darkgreen",
+model_colours_final <- c(ARIMA = "blue", SARIMA = "darkgreen", SARIMA_1 = "darkgreen",SARIMA_2 = "skyblue",
                          NNAR = "orange", GPR = "red")
-model_lty_final <- c(ARIMA = 2, SARIMA = 3, NNAR = 4, GPR = 1)
+model_lty_final <- c(ARIMA = 2, SARIMA = 3,SARIMA_1 = 3, SARIMA_2 = 5, NNAR = 4, GPR = 1)
 
 
 # ERROR MEASURES (same formulas as accuracy(); missing values are skipped)
@@ -3679,8 +3679,13 @@ model_names_tfr_final <- c(
 arima_tlb_final <- arima(log(tlb_training), order = c(12, 1, 3))
 
 # SARIMA(5,0,0)(0,1,1)[12] on log(TLB) - same call as candidate_tlb_s
-sarima_tlb_final <- arima(log(tlb_training), order = c(5, 0, 0),
+sarima_tlb_final_1 <- arima(log(tlb_training), order = c(5, 0, 0),
                           seasonal = list(order = c(0, 1, 1), period = 12))
+
+# SARIMA(5,0,0)(1,1,0)[12] on log(TLB) - same call as candidate_tlb_s
+sarima_tlb_final_2 <- arima(log(tlb_training), order = c(5, 0, 0),
+                          seasonal = list(order = c(1, 1, 0), period = 12))
+
 
 # Log-NNAR(5,3) - same settings and seed as in the TLB comparison
 set.seed(123)
@@ -3693,8 +3698,9 @@ gpr_tlb_final <- selected_models_tlb_gpr[[best_tlb_gpr]]
 # Training fitted values (back-transformed to number of births)
 train_fitted_tlb_final <- list(
   ARIMA  = as.numeric(exp(log(tlb_training) - residuals(arima_tlb_final))),
-  SARIMA = as.numeric(exp(log(tlb_training) - residuals(sarima_tlb_final))),
-  NNAR   = as.numeric(fitted(nnar_tlb_final)),
+  SARIMA_1 = as.numeric(exp(log(tlb_training) - residuals(sarima_tlb_final_1))),
+  SARIMA_2 = as.numeric(exp(log(tlb_training) - residuals(sarima_tlb_final_2))),
+    NNAR   = as.numeric(fitted(nnar_tlb_final)),
   GPR    = as.numeric(gpr_tlb_final$fitted)
 )
 
@@ -3703,22 +3709,25 @@ h_tlb_final <- length(tlb_test)
 
 test_forecast_tlb_final <- list(
   ARIMA  = as.numeric(exp(predict(arima_tlb_final, n.ahead = h_tlb_final)$pred)),
-  SARIMA = as.numeric(exp(predict(sarima_tlb_final, n.ahead = h_tlb_final)$pred)),
-  NNAR   = as.numeric(forecast(nnar_tlb_final, h = h_tlb_final)$mean),
+  SARIMA_1 = as.numeric(exp(predict(sarima_tlb_final_1, n.ahead = h_tlb_final)$pred)),
+  SARIMA_2 = as.numeric(exp(predict(sarima_tlb_final_2, n.ahead = h_tlb_final)$pred)),
+    NNAR   = as.numeric(forecast(nnar_tlb_final, h = h_tlb_final)$mean),
   GPR    = as.numeric(gpr_forecast(gpr_tlb_final, h = h_tlb_final))
 )
 
 # Residuals on the log scale (the scale the models are fitted on)
 residuals_tlb_final <- list(
   ARIMA  = residuals(arima_tlb_final),
-  SARIMA = residuals(sarima_tlb_final),
-  NNAR   = residuals(nnar_tlb_final),
+  SARIMA_1 = residuals(sarima_tlb_final_1),
+  SARIMA_2 = residuals(sarima_tlb_final_2),
+    NNAR   = residuals(nnar_tlb_final),
   GPR    = gpr_tlb_final$residuals
 )
 
 model_names_tlb_final <- c(
   ARIMA  = "ARIMA(12,1,3) log",
-  SARIMA = "SARIMA(5,0,0)(0,1,1)[12] log",
+  SARIMA_1 = "SARIMA(5,0,0)(0,1,1)[12] log",
+  SARIMA_2 = "SARIMA(5,0,0)(1,1,0)[12] log",
   NNAR   = "Log-NNAR(5,3)",
   GPR    = paste(best_tlb_gpr, "log")
 )
@@ -3857,16 +3866,7 @@ plot_final_comparison(
   comparison_tfr_final, digits = "%.4f"
 )
 
-# TFR - save as PNG
-png("Output/Final_Comparison/Best_Models_TFR.png",
-    width = 14, height = 6, units = "in", res = 300)
-plot_final_comparison(
-  "Total Fertility Rate (TFR)", "Total Fertility Rate", model_names_tfr_final,
-  tfr_training, train_fitted_tfr_final,
-  tfr_test, test_forecast_tfr_final,
-  comparison_tfr_final, digits = "%.4f"
-)
-dev.off()
+
 
 # TLB - show on screen
 plot_final_comparison(
@@ -3876,13 +3876,3 @@ plot_final_comparison(
   comparison_tlb_final, digits = "%.0f"
 )
 
-# TLB - save as PNG
-png("Output/Final_Comparison/Best_Models_TLB.png",
-    width = 14, height = 6, units = "in", res = 300)
-plot_final_comparison(
-  "Total Live-Births (TLB)", "Total Live-Births", model_names_tlb_final,
-  tlb_training, train_fitted_tlb_final,
-  tlb_test, test_forecast_tlb_final,
-  comparison_tlb_final, digits = "%.0f"
-)
-dev.off()
