@@ -4097,7 +4097,7 @@ plot_final_comparison(
   tfr_test, test_forecast_tfr_final,
   comparison_tfr_final, digits = "%.4f"
 )
-dev.off()
+
 
 # TLB - show on screen
 plot_final_comparison(
