@@ -3847,7 +3847,7 @@ error_measures_final <- function(actual, predicted) {
     MAE  = mean(abs(errors)),
     MAPE = mean(abs(errors / actual[ok])) * 100
   )
-}
+} 
 
 
 # FIT THE BEST MODELS - TFR
@@ -4106,3 +4106,4 @@ plot_final_comparison(
   tlb_test, test_forecast_tlb_final,
   comparison_tlb_final, digits = "%.0f"
 )
+
