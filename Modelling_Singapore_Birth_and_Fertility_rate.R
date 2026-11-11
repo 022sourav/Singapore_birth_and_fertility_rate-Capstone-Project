@@ -4106,13 +4106,3 @@ plot_final_comparison(
   tlb_test, test_forecast_tlb_final,
   comparison_tlb_final, digits = "%.0f"
 )
-# 
-# TLB - save as PNG
-png("Output/Final_Comparison/Best_Models_TLB.png",
-    width = 14, height = 6, units = "in", res = 300)
-plot_final_comparison(
-  "Total Live-Births (TLB)", "Total Live-Births", model_names_tlb_final,
-  tlb_training, train_fitted_tlb_final,
-  tlb_test, test_forecast_tlb_final,
-  comparison_tlb_final, digits = "%.0f"
-)
