@@ -3,8 +3,6 @@
 # PROJECT: Modelling Singapore Birth and Fertility Rates
 # Team: PG-S2-51
 #
-# Data Cleaning and Exploratory Data Analysis
-#
 # Data period: 1960 - 2025
 # Training period: 1960 - 2012
 # Testing period: 2013 - 2025
@@ -1147,7 +1145,6 @@ tfr_training <- ts(train_rows_tfr$value, start = 1960, end = 2012, frequency = 1
 tfr_training
 
 
-
 # Test dataset
 
 # Select and sort the test years
@@ -1353,8 +1350,6 @@ tlb_test <- ts(test_rows$value, start = 2013, end = 2025, frequency = 1)
 tlb_test
 
 
-
-
 #plot(log(tlb_training))
 kpss.test(diff(log(tlb_training)))
 
@@ -1362,7 +1357,6 @@ kpss.test(diff(log(tlb_training)))
 
 acf(diff(log(tlb_training)),lag=40)
 pacf(diff(log(tlb_training)),lag=40)
-
 
 
 #######  RUN MODEL ##########################
@@ -1385,21 +1379,6 @@ par(old_par_tlb)
 train_pred <- exp(log(tlb_training) - residuals(candidate_tlb))
 test_pred <- exp(predict(candidate_tlb, n.ahead = length(tlb_test))$pred)
 
-######### PRDDICTION RESUL
-
-#           Model  Set       AIC      RMSE      MAE     MAPE
-
-# 4 ARIMA(13,1,1) Test -141.4462 10476.842 8969.293 25.21881
-# 3 ARIMA(13,1,2) Test -142.4665 10203.632 8715.483 24.53455
-# 1 ARIMA(13,1,3) Test -145.4682  9299.696 7881.560 22.18053
-# 2 ARIMA(13,1,4) Test -144.77  9937.09618 8295.83  23.43728
-
-# 4 ARIMA(12,1,3) Test -139.6921 5654.236 4331.727 12.50054 -------------
-# 4 ARIMA(12,1,4) Test -144.77  9937.09618 8295.83691   23.43728
-#ARIMA(11,1,4) AIC -  -136.58
-# RMSE        MAE       MAPE 
-# 8677.98763 7475.43243   21.01787
-#ARIMA(14,1,3) Test -143.6268  9458.965 8027.458 22.58280
 ################## PLOT PREDICTION################################
 
 # Keep only your passing models here
@@ -1601,8 +1580,10 @@ candidate_tfr_s
 
 fc <- predict(candidate_tfr_s, n.ahead = length(tfr_test))$pred
 train_fitted <- tfr_training - residuals(candidate_tfr_s)
+
 # Training accuracy
 accuracy(train_fitted, tfr_training)[, c("RMSE", "MAE", "MAPE")]
+
 #accuracy(fc, tfr_test)["Test set", ]
 accuracy(fc, tfr_test)[, c("RMSE", "MAE", "MAPE")]
 
@@ -1975,18 +1956,6 @@ plot_predictions_s_tlb(
 
 par(old_par_s_tlb)
 
-################# THIS FOR MANUAL ERROR CALCULATIOn USE IF REQUIRE DONT DELETE #################
-# 
-# actual <- as.numeric(tfr_test)
-# predicted <- as.numeric(fc)
-# errors <- actual - predicted
-# 
-# c(
-#   RMSE = sqrt(mean(errors^2)),
-#   MAE = mean(abs(errors)),
-#   MAPE = mean(abs(errors / actual)) * 100
-# )
-
 # Machine Learning Models
 
 ########## NEURAL NETWORK MACHINE LEARNING MODEL TFR ################
@@ -2049,7 +2018,6 @@ pacf(
 
 par(old_par)
 ############### RESULT ########################################################
-##############################################################################
 
 ############### PLOT ##########################################################
 
@@ -2523,7 +2491,6 @@ par(old_par)
 ################### PLOT ##################################
 
 ########## SETTINGS TO COMPARE ########################
-########## SETTINGS TO COMPARE ########################
 settings <- list(
   c(p = 11, P = 1, size = 6, repeats = 20),
   c(p = 12, P = 1, size = 6, repeats = 20)
@@ -2556,6 +2523,7 @@ selected_names <- sapply(seq_along(selected_models), function(i) {
 })
 
 names(selected_models) <- selected_names
+
 ########## TRAINING FITTED VALUES #####################
 train_predictions <- lapply(selected_models, function(model) {
   as.numeric(fitted(model))
@@ -2652,6 +2620,7 @@ plot_predictions(
 )
 
 par(old_par)
+
 ########## TEST ACCURACY TABLE TFR ########################
 test_results <- do.call(
   rbind,
@@ -2676,6 +2645,7 @@ test_results <- test_results[order(test_results$MAPE), ]
 rownames(test_results) <- NULL
 
 test_results
+
 ##########################################################
 ########## HK TRAINING DATA: 12-YEAR CYCLE TLB #########
 old_par <- par(mfrow = c(1, 2))
@@ -2706,7 +2676,7 @@ candidate_tlb_ml <- nnetar(
 candidate_tlb_ml
 
 ########## FORECAST ##################################
-# Automatically returns to original birth-count scale
+
 fc_tlb_ml <- forecast(
   candidate_tlb_ml,
   h = length(tlb_test)
@@ -2719,7 +2689,7 @@ accuracy(
 )[, c("RMSE", "MAE", "MAPE")]
 
 ########## RESIDUAL ACF AND PACF ######################
-# Response residuals give ONE series on original scale
+
 res_tlb_ml <- as.numeric(
   residuals(candidate_tlb_ml, type = "response")
 )
@@ -2902,7 +2872,6 @@ plot_predictions_tlb(
 
 par(old_par)
 
-######################
 ########## TEST ACCURACY TABLE TFR ########################
 test_results <- do.call(
   rbind,
@@ -2932,57 +2901,12 @@ test_results
 ##############################################################################
 ##############################################################################
 # GAUSSIAN PROCESS REGRESSION (GPR) MODELS - TFR AND TLB
-#
-# Training period: 1960 - 2012 | Testing period: 2013 - 2025
-#
-# Uses the cleaned `data` and the series tfr_training, tfr_test,
-# tlb_training and tlb_test already created in the ARIMA sections above.
-#
-# Revisions (after instructor feedback):
-#   1. TFR  - d = 1: every lag from 12 to 18 is tested with rbfdot.
-#             d = 2: GPR(11,2) and GPR(12,2) rbfdot are tested, from the
-#             significant PACF lags 11 and 12 of the second-differenced TFR.
-#             GPR(11,1,rbfdot) gave low test errors but was dropped because
-#             its residuals were not white noise.
-#   2. TLB  - modelled on the LOG scale, the same as ARIMA / SARIMA, so the
-#             models can be compared fairly. Forecasts are back-transformed
-#             with exp() and errors are reported in number of births.
-#   3. TLB  - every PACF-guided model whose residuals are white noise
-#             (Ljung-Box p > 0.05) is kept and ranked on test RMSE.
-#   4. Models are not filtered on error. Every candidate with white-noise
-#      residuals is kept and its RMSE, MAE and MAPE are listed.
-#   5. Test  - multi-step (recursive) forecasts with gpr_forecast(), the
-#             same method as predict() / forecast() for ARIMA, SARIMA and
-#             NNAR, so all models are compared fairly. 2013 is predicted
-#             from the real 1960-2012 values; from 2014 onwards each
-#             forecast is fed back in as a lag. No real 2013-2025 value is
-#             used to make any test prediction.
-#
-# Object names in this section end in _gpr (or start with gpr_) so they do
-# not overwrite the ARIMA / SARIMA / neural network objects above.
-##############################################################################
+
 
 library(kernlab)
 
 # Make sure the plot settings are back to one plot per screen
 par(mfrow = c(1, 1), ask = FALSE)
-
-# GPR FUNCTIONS
-# ============================================================
-# GPR(p, d, kernel)
-#   p      = number of past years used as inputs (chosen from the PACF)
-#   d      = differencing, same as ARIMA (chosen with the KPSS test)
-#   kernel = "rbfdot" (Gaussian kernel) or "laplacedot" (exponential kernel)
-#
-# The model predicts the next differenced value from the previous p
-# differenced values. The test period uses gpr_forecast, which feeds each
-# forecast back in as an input for the next year (multi-step forecasting,
-# the same as predict() for ARIMA / SARIMA and forecast() for NNAR).
-#
-# log_scale = TRUE fits the model on log(series) and converts the fitted
-# values and forecasts back with exp(). Residuals stay on the log scale
-# (that is the scale the model is fitted on, so it is the one checked
-# for white noise).
 
 gpr_model <- function(series, p, d = 1, kernel = "rbfdot", log_scale = FALSE) {
   
@@ -3039,19 +2963,6 @@ gpr_forecast <- function(gpr, h) {
   fc_gpr
 }
 
-# ONE-STEP-AHEAD FORECAST - NOT USED IN THE MODEL COMPARISON
-# Kept for reference only. The test results in this section use the
-# multi-step gpr_forecast() above, so GPR is evaluated the same way as the
-# other models.
-#
-# One-step-ahead version (using the real past values):
-# Each test year is predicted from the REAL previous p years, not from
-# earlier forecasts. Example for GPR(12,1) on TFR:
-#   2013 uses the real differences up to 2012 (all from the training data)
-#   2014 uses the real differences up to 2013 (11 training + 1 test year)
-#   2025 uses the real differences up to 2024 (all from the test data)
-# The model is NOT re-fitted: it is still trained on 1960-2012 only, and a
-# year's own actual value is never used to predict that year.
 gpr_test_forecast <- function(gpr, test) {
   
   actual <- as.numeric(test)
@@ -3328,33 +3239,7 @@ accuracy(fc_gpr, tfr_test)[, c("RMSE", "MAE", "MAPE")]
 acf(na.omit(gpr_tfr_p12_d2_rbf$residuals), lag.max = 40, main = "ACF of GPR(12,2,rbfdot) Residuals")
 pacf(na.omit(gpr_tfr_p12_d2_rbf$residuals), lag.max = 40, main = "PACF of GPR(12,2,rbfdot) Residuals")
 
-# #################################################
-# LB = Ljung-Box p-value of the residuals (above 0.05 = white noise)
-# Multi-step test errors (2013-2025 forecast from 1960-2012).
-# Sorted by test RMSE. ---- = shortlisted candidate
-# The two d = 2 rows marked (run) are new: fill in their test errors from
-# test_results_tfr_gpr after running the script.
-### d=1 ###
-#   Model                 Set   RMSE         MAE          MAPE       LB
-#   GPR(13,1,rbfdot)      Test  0.0596841    0.0529371    4.8637     0.879 ----
-#   GPR(16,1,rbfdot)      Test  0.0607418    0.0496233    4.6741     0.892 ----
-#   GPR(17,1,rbfdot)      Test  0.0612574    0.0522214    4.7637     -
-#   GPR(14,1,rbfdot)      Test  0.0622955    0.0512506    4.8212     0.968 ----
-#   GPR(18,1,rbfdot)      Test  0.0647824    0.0535512    4.7816     -
-#   GPR(15,1,rbfdot)      Test  0.0698732    0.0548927    5.3091     0.878 ----
-#   GPR(12,1,rbfdot)      Test  0.1062666    0.0933096    8.2585     0.978 ----
-#   GPR(11,1,rbfdot)      Test  0.0487423    0.0421225    3.8916     0.576 - removed: residuals not white noise
-
-#### d=2 ###
-#   Model                 Set   RMSE         MAE          MAPE       LB
-#   GPR(11,2,rbfdot)      Test  (run)        (run)        (run)      0.740 ----
-#   GPR(12,2,rbfdot)      Test  (run)        (run)        (run)      (run) ----
-#   GPR(16,2,rbfdot)      Test  0.0516227    0.0444069    4.0423     0.093 - replaced by GPR(12,2)
-
-# FORECAST OF GOOD CANDIDATES #
-# Shortlist: d = 1 lags 12-16 and d = 2 lags 11 and 12 (PACF-guided).
-# The White_Noise column in the results confirms the Ljung-Box test for
-# each model. Nothing is removed on the basis of RMSE, MAE or MAPE.
+# Forcasting selected models
 
 candidates_gpr_tfr <- list(
   list(p = 11, d = 2, kernel = "rbfdot"),
@@ -3482,57 +3367,6 @@ kpss.test(diff(log_tlb_training_gpr, differences = 2))
 
 
 # GPR Models (log scale)
-# Every PACF-guided lag is fitted with both kernels:
-#   d = 1 : p = 11, 12, 13
-#   d = 2 : p = 1, 2, 5, 11, 12
-
-# GPR(11,1,rbfdot)
-
-gpr_tlb_p11_d1_rbf <- gpr_model(tlb_training, p = 11, d = 1, kernel = "rbfdot", log_scale = TRUE)
-gpr_tlb_p11_d1_rbf$model
-fc_gpr <- gpr_forecast(gpr_tlb_p11_d1_rbf, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p11_d1_rbf$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p11_d1_rbf$residuals), lag.max = 40, main = "ACF of GPR(11,1,rbfdot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p11_d1_rbf$residuals), lag.max = 40, main = "PACF of GPR(11,1,rbfdot) Residuals (log TLB)")
-
-# GPR(11,1,laplacedot)
-
-gpr_tlb_p11_d1_lap <- gpr_model(tlb_training, p = 11, d = 1, kernel = "laplacedot", log_scale = TRUE)
-gpr_tlb_p11_d1_lap$model
-fc_gpr <- gpr_forecast(gpr_tlb_p11_d1_lap, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p11_d1_lap$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p11_d1_lap$residuals), lag.max = 40, main = "ACF of GPR(11,1,laplacedot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p11_d1_lap$residuals), lag.max = 40, main = "PACF of GPR(11,1,laplacedot) Residuals (log TLB)")
-
-# GPR(12,1,rbfdot)
-
-gpr_tlb_p12_d1_rbf <- gpr_model(tlb_training, p = 12, d = 1, kernel = "rbfdot", log_scale = TRUE)
-gpr_tlb_p12_d1_rbf$model
-fc_gpr <- gpr_forecast(gpr_tlb_p12_d1_rbf, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p12_d1_rbf$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p12_d1_rbf$residuals), lag.max = 40, main = "ACF of GPR(12,1,rbfdot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p12_d1_rbf$residuals), lag.max = 40, main = "PACF of GPR(12,1,rbfdot) Residuals (log TLB)")
-
-# GPR(12,1,laplacedot)
-
-gpr_tlb_p12_d1_lap <- gpr_model(tlb_training, p = 12, d = 1, kernel = "laplacedot", log_scale = TRUE)
-gpr_tlb_p12_d1_lap$model
-fc_gpr <- gpr_forecast(gpr_tlb_p12_d1_lap, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p12_d1_lap$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p12_d1_lap$residuals), lag.max = 40, main = "ACF of GPR(12,1,laplacedot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p12_d1_lap$residuals), lag.max = 40, main = "PACF of GPR(12,1,laplacedot) Residuals (log TLB)")
 
 # GPR(13,1,rbfdot)
 
@@ -3545,66 +3379,6 @@ Box.test(na.omit(gpr_tlb_p13_d1_rbf$residuals), lag = 10, type = "Ljung-Box")
 
 acf(na.omit(gpr_tlb_p13_d1_rbf$residuals), lag.max = 40, main = "ACF of GPR(13,1,rbfdot) Residuals (log TLB)")
 pacf(na.omit(gpr_tlb_p13_d1_rbf$residuals), lag.max = 40, main = "PACF of GPR(13,1,rbfdot) Residuals (log TLB)")
-
-# GPR(13,1,laplacedot)
-
-gpr_tlb_p13_d1_lap <- gpr_model(tlb_training, p = 13, d = 1, kernel = "laplacedot", log_scale = TRUE)
-gpr_tlb_p13_d1_lap$model
-fc_gpr <- gpr_forecast(gpr_tlb_p13_d1_lap, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p13_d1_lap$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p13_d1_lap$residuals), lag.max = 40, main = "ACF of GPR(13,1,laplacedot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p13_d1_lap$residuals), lag.max = 40, main = "PACF of GPR(13,1,laplacedot) Residuals (log TLB)")
-
-# GPR(1,2,rbfdot)
-
-gpr_tlb_p1_d2_rbf <- gpr_model(tlb_training, p = 1, d = 2, kernel = "rbfdot", log_scale = TRUE)
-gpr_tlb_p1_d2_rbf$model
-fc_gpr <- gpr_forecast(gpr_tlb_p1_d2_rbf, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p1_d2_rbf$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p1_d2_rbf$residuals), lag.max = 40, main = "ACF of GPR(1,2,rbfdot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p1_d2_rbf$residuals), lag.max = 40, main = "PACF of GPR(1,2,rbfdot) Residuals (log TLB)")
-
-# GPR(1,2,laplacedot)
-
-gpr_tlb_p1_d2_lap <- gpr_model(tlb_training, p = 1, d = 2, kernel = "laplacedot", log_scale = TRUE)
-gpr_tlb_p1_d2_lap$model
-fc_gpr <- gpr_forecast(gpr_tlb_p1_d2_lap, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p1_d2_lap$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p1_d2_lap$residuals), lag.max = 40, main = "ACF of GPR(1,2,laplacedot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p1_d2_lap$residuals), lag.max = 40, main = "PACF of GPR(1,2,laplacedot) Residuals (log TLB)")
-
-# GPR(2,2,rbfdot)
-
-gpr_tlb_p2_d2_rbf <- gpr_model(tlb_training, p = 2, d = 2, kernel = "rbfdot", log_scale = TRUE)
-gpr_tlb_p2_d2_rbf$model
-fc_gpr <- gpr_forecast(gpr_tlb_p2_d2_rbf, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p2_d2_rbf$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p2_d2_rbf$residuals), lag.max = 40, main = "ACF of GPR(2,2,rbfdot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p2_d2_rbf$residuals), lag.max = 40, main = "PACF of GPR(2,2,rbfdot) Residuals (log TLB)")
-
-# GPR(2,2,laplacedot)
-
-gpr_tlb_p2_d2_lap <- gpr_model(tlb_training, p = 2, d = 2, kernel = "laplacedot", log_scale = TRUE)
-gpr_tlb_p2_d2_lap$model
-fc_gpr <- gpr_forecast(gpr_tlb_p2_d2_lap, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p2_d2_lap$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p2_d2_lap$residuals), lag.max = 40, main = "ACF of GPR(2,2,laplacedot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p2_d2_lap$residuals), lag.max = 40, main = "PACF of GPR(2,2,laplacedot) Residuals (log TLB)")
 
 # GPR(5,2,rbfdot)
 
@@ -3654,75 +3428,13 @@ Box.test(na.omit(gpr_tlb_p11_d2_lap$residuals), lag = 10, type = "Ljung-Box")
 acf(na.omit(gpr_tlb_p11_d2_lap$residuals), lag.max = 40, main = "ACF of GPR(11,2,laplacedot) Residuals (log TLB)")
 pacf(na.omit(gpr_tlb_p11_d2_lap$residuals), lag.max = 40, main = "PACF of GPR(11,2,laplacedot) Residuals (log TLB)")
 
-# GPR(12,2,rbfdot)
-
-gpr_tlb_p12_d2_rbf <- gpr_model(tlb_training, p = 12, d = 2, kernel = "rbfdot", log_scale = TRUE)
-gpr_tlb_p12_d2_rbf$model
-fc_gpr <- gpr_forecast(gpr_tlb_p12_d2_rbf, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p12_d2_rbf$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p12_d2_rbf$residuals), lag.max = 40, main = "ACF of GPR(12,2,rbfdot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p12_d2_rbf$residuals), lag.max = 40, main = "PACF of GPR(12,2,rbfdot) Residuals (log TLB)")
-
-# GPR(12,2,laplacedot)
-
-gpr_tlb_p12_d2_lap <- gpr_model(tlb_training, p = 12, d = 2, kernel = "laplacedot", log_scale = TRUE)
-gpr_tlb_p12_d2_lap$model
-fc_gpr <- gpr_forecast(gpr_tlb_p12_d2_lap, h = length(tlb_test))
-
-accuracy(fc_gpr, tlb_test)[, c("RMSE", "MAE", "MAPE")]
-Box.test(na.omit(gpr_tlb_p12_d2_lap$residuals), lag = 10, type = "Ljung-Box")
-
-acf(na.omit(gpr_tlb_p12_d2_lap$residuals), lag.max = 40, main = "ACF of GPR(12,2,laplacedot) Residuals (log TLB)")
-pacf(na.omit(gpr_tlb_p12_d2_lap$residuals), lag.max = 40, main = "PACF of GPR(12,2,laplacedot) Residuals (log TLB)")
-
-# #################################################
-# LB = Ljung-Box p-value of the residuals (above 0.05 = white noise)
-# Multi-step test errors (2013-2025 forecast from 1960-2012), log scale;
-# RMSE / MAE in births (back-transformed), MAPE in %. Sorted by test RMSE.
-# ---- = PACF-guided candidate (all have white-noise residuals)
-# The low-lag d = 2 models drift away from the data when forecasting
-# 13 years ahead, which is why their errors are very large.
-### d=1 ###
-#   Model                 Set   RMSE         MAE          MAPE       LB
-#   GPR(11,1,rbfdot)      Test  1660.6       1378.6       3.6661     0.977 ----
-#   GPR(13,1,rbfdot)      Test  2579.1       1847.7       5.2488     0.663 ----
-#   GPR(12,1,rbfdot)      Test  2749.6       2184.1       5.9286     0.483 ----
-#   GPR(12,1,laplacedot)  Test  3067.1       2211.0       6.3886     0.935 ----
-#   GPR(13,1,laplacedot)  Test  3141.2       2297.2       6.6696     0.791 ----
-#   GPR(11,1,laplacedot)  Test  3376.5       2598.4       7.4863     0.992 ----
-
-#### d=2 ###
-#   Model                 Set   RMSE         MAE          MAPE       LB
-#   GPR(11,2,rbfdot)      Test  1552.6       1365.4       3.7265     0.725 ----
-#   GPR(11,2,laplacedot)  Test  2496.3       2087.5       5.8414     0.836 ----
-#   GPR(12,2,rbfdot)      Test  3803.2       3016.4       8.5866     0.601 ----
-#   GPR(12,2,laplacedot)  Test  9611.5       7193.2       20.8107    0.267 ----
-#   GPR(2,2,laplacedot)   Test  21058.1      19452.7      53.6441    0.412 ----
-#   GPR(1,2,rbfdot)       Test  28393.5      26720.5      72.3587    0.217 ----
-#   GPR(5,2,laplacedot)   Test  38844.4      30838.9      88.1436    0.880 ----
-#   GPR(5,2,rbfdot)       Test  79949.0      54955.7      161.5347   0.984 ----
-#   GPR(2,2,rbfdot)       Test  101478.0     80694.3      230.8789   0.982 ----
-#   GPR(1,2,laplacedot)   Test  252423.2     191482.7     553.0856   0.998 ----
-#################################################
 
 # FORECAST OF GOOD CANDIDATES #
-# Every candidate above has white-noise residuals (LB > 0.05), so all of
-# them are kept. Nothing is removed on the basis of RMSE, MAE or MAPE.
 
 candidates_gpr_tlb <- list(
   list(p = 11, d = 1, kernel = "rbfdot"),
-  list(p = 11, d = 1, kernel = "laplacedot"),
   list(p = 12, d = 1, kernel = "rbfdot"),
-  list(p = 12, d = 1, kernel = "laplacedot"),
   list(p = 13, d = 1, kernel = "rbfdot"),
-  list(p = 13, d = 1, kernel = "laplacedot"),
-  list(p = 1, d = 2, kernel = "rbfdot"),
-  list(p = 1, d = 2, kernel = "laplacedot"),
-  list(p = 2, d = 2, kernel = "rbfdot"),
-  list(p = 2, d = 2, kernel = "laplacedot"),
   list(p = 5, d = 2, kernel = "rbfdot"),
   list(p = 5, d = 2, kernel = "laplacedot"),
   list(p = 11, d = 2, kernel = "rbfdot"),
@@ -3791,33 +3503,6 @@ par(old_par)
 ##############################################################################
 ##############################################################################
 # FINAL COMPARISON OF THE BEST MODELS
-#
-# The best model of each type (lowest test error in its own section):
-#
-#   TFR : ARIMA(12,2,3)
-#         SARIMA(5,1,3)(0,1,0)[12]
-#         NNAR(12,1,6)[12]           (12-year cycle, repeats = 20)
-#         best GPR = best_tfr_gpr    (chosen in the GPR section)
-#
-#   TLB : ARIMA(12,1,3)              on log(TLB)
-#         SARIMA(5,0,0)(0,1,1)[12]   on log(TLB)
-#         Log-NNAR(5,3)              (lambda = 0, repeats = 20)
-#         best GPR = best_tlb_gpr    on log(TLB) (chosen in the GPR section)
-#
-# ARIMA, SARIMA and NNAR are fitted again here with exactly the same
-# settings and seed as in their own sections, so the numbers match the
-# earlier results. The GPR models are taken directly from the GPR section:
-# the white-noise model with the lowest test RMSE (best_tfr_gpr and
-# best_tlb_gpr), so this section always uses the current best GPR. Objects in
-# this section end in _final so nothing above is overwritten.
-#
-# All test forecasts are multi-step: 2013-2025 is forecast from the
-# 1960-2012 training data only. All errors are on the original scale
-# (TFR, or number of births for TLB).
-#
-# To compare a different ARIMA, SARIMA or NNAR model, change its line in the
-# FIT section below. The GPR model follows best_tfr_gpr / best_tlb_gpr.
-##############################################################################
 
 # Output folder for the final graphs and table
 if (!dir.exists("Output/Final_Comparison")) {
