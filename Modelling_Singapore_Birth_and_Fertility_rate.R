@@ -838,12 +838,15 @@ write.csv(
   "Output/EDA/Correlation_Matrix.csv"
 )
 
-# K-YEAR AVERAGE MODEL
+# K-YEAR AVERAGE MODEL (Dragon-adjusted)
 # ============================================================
 
-k <- 2       
+k <- 2
 
-ma_label <- paste0(k, "-yr average")
+ma_label <- paste0(k, "-yr average (Dragon-adjusted)")
+
+dragon_train_years <- c(1964, 1976, 1988, 2000)   # 2012 excluded: its neighbour 2013 is a test year
+
 
 # SECTION 1: TOTAL FERTILITY RATE (TFR)
 # ============================================================
@@ -863,23 +866,52 @@ tfr_n <- length(tfr_x)
 unique(diff(tfr_series$year))
 
 
-# 1.2 MANUAL K-YEAR AVERAGE MODEL
+# 1.2 DRAGON EFFECT
+# ============================================================
+# Average amount a Dragon year sits above the mean of its two neighbours
+
+tfr_series$dragon <- as.numeric((tfr_series$year - 1964) %% 12 == 0)
+
+dy_tfr    <- which(tfr_series$year %in% dragon_train_years)
+delta_tfr <- mean(tfr_x[dy_tfr] - (tfr_x[dy_tfr - 1] + tfr_x[dy_tfr + 1]) / 2)
+
+cat("TFR Dragon effect:", round(delta_tfr, 3), "\n")
+
+tfr_adj <- tfr_x - delta_tfr * tfr_series$dragon   # remove Dragon spikes
+
+
+# 1.3 MANUAL K-YEAR AVERAGE MODEL
 # ============================================================
 
-tfr_ma <- rep(NA, tfr_n)
+tfr_n_tr <- sum(tfr_series$year <= 2012)
+tfr_ma   <- rep(NA, tfr_n)
 
-for (t in (k + 1):tfr_n) {
+# Training (1960-2012): one-step forecasts from actual values
+for (t in (k + 1):tfr_n_tr) {
   total <- 0
   for (j in 1:k) {
-    total <- total + tfr_x[t - j]
+    total <- total + tfr_adj[t - j]
   }
   tfr_ma[t] <- total / k
 }
 
-tfr_series$forecast <- tfr_ma
+# Testing (2013-2025): multi-step forecasts, built only from earlier forecasts
+tfr_hist <- tfr_adj[1:tfr_n_tr]
+for (t in (tfr_n_tr + 1):tfr_n) {
+  total <- 0
+  for (j in 1:k) {
+    total <- total + tfr_hist[t - j]
+  }
+  tfr_ma[t]   <- total / k
+  tfr_hist[t] <- tfr_ma[t]
+}
+
+# Add the Dragon effect back in Dragon years
+tfr_series$forecast <- tfr_ma + delta_tfr * tfr_series$dragon
 tfr_series$residual <- tfr_series$value - tfr_series$forecast
 
-# 1.3 SPLIT INTO TRAINING AND TESTING
+
+# 1.4 SPLIT INTO TRAINING AND TESTING
 # ============================================================
 
 tfr_train <- tfr_series %>% filter(year <= 2012)
@@ -887,7 +919,8 @@ tfr_test  <- tfr_series %>% filter(year >= 2013)
 
 print(tfr_test %>% select(year, actual = value, forecast, residual))
 
-# 1.4 ACCURACY: RMSE, MAE, MAPE
+
+# 1.5 ACCURACY: RMSE, MAE, MAPE
 # ============================================================
 
 tfr_tr <- tfr_train %>% filter(!is.na(forecast))
@@ -903,16 +936,18 @@ cat("TFR accuracy, k =", k, "\n")
 print(round(tfr_accuracy, 4))
 
 
-# 1.5 ACF AND PACF - TRAINING
+# 1.6 ACF AND PACF - TRAINING
 # ============================================================
 
 tfr_res_train <- na.omit(tfr_train$residual)
+
+print(Box.test(tfr_res_train, lag = 10, type = "Ljung-Box"))
 
 acf(tfr_res_train,  lag.max = 40, main = paste("ACF Training - TFR, k =", k))
 pacf(tfr_res_train, lag.max = 40, main = paste("PACF Training - TFR, k =", k))
 
 
-# 1.6 ACF AND PACF - TESTING
+# 1.7 ACF AND PACF - TESTING
 # ============================================================
 
 tfr_res_test <- na.omit(tfr_test$residual)
@@ -922,7 +957,7 @@ acf(tfr_res_test,  lag.max = tfr_lag_test, main = paste("ACF Testing - TFR, k ="
 pacf(tfr_res_test, lag.max = tfr_lag_test, main = paste("PACF Testing - TFR, k =", k))
 
 
-# 1.7 PLOT: TRAINING (1960 - 2012)
+# 1.8 PLOT: TRAINING (1960 - 2012)
 # ============================================================
 
 ggplot(tfr_train, aes(x = year)) +
@@ -931,13 +966,13 @@ ggplot(tfr_train, aes(x = year)) +
             linetype = "dashed", linewidth = 1) +
   scale_colour_manual(values = setNames(c("black", "red"),
                                         c("Actual", ma_label))) +
-  labs(title = paste0("TFR: Actual vs ", k, "-Year Average Model (Training 1960-2012)"),
+  labs(title = paste0("TFR: Actual vs ", ma_label, " (Training 1960-2012)"),
        x = "Year", y = "Total Fertility Rate", colour = "") +
   theme_minimal() +
   theme(legend.position = "bottom")
 
 
-# 1.8 PLOT: TESTING (2013 - 2025)
+# 1.9 PLOT: TESTING (2013 - 2025)
 # ============================================================
 
 ggplot(tfr_test, aes(x = year)) +
@@ -949,11 +984,12 @@ ggplot(tfr_test, aes(x = year)) +
   scale_x_continuous(breaks = 2013:2025) +
   scale_colour_manual(values = setNames(c("black", "red"),
                                         c("Actual", ma_label))) +
-  labs(title = paste0("TFR: Actual vs ", k, "-Year Average Model (Testing 2013-2025)"),
+  labs(title = paste0("TFR: Actual vs ", ma_label, " (Testing 2013-2025)"),
        x = "Year", y = "Total Fertility Rate", colour = "") +
   theme_minimal() +
   theme(legend.position = "bottom",
         axis.text.x = element_text(angle = 45, hjust = 1))
+
 
 # SECTION 2: LOG TOTAL LIVE-BIRTHS (log TLB)
 # ============================================================
@@ -974,33 +1010,62 @@ tlb_n <- length(tlb_x)
 unique(diff(tlb_series$year))
 
 
-# 2.2 K-YEAR AVERAGE MODEL ON LOG(TLB)
+# 2.2 DRAGON EFFECT
 # ============================================================
 
-tlb_ma <- rep(NA, tlb_n)
+tlb_series$dragon <- as.numeric((tlb_series$year - 1964) %% 12 == 0)
 
-for (t in (k + 1):tlb_n) {
+dy_tlb    <- which(tlb_series$year %in% dragon_train_years)
+delta_tlb <- mean(tlb_x[dy_tlb] - (tlb_x[dy_tlb - 1] + tlb_x[dy_tlb + 1]) / 2)
+
+cat("log TLB Dragon effect:", round(delta_tlb, 3),
+    "=", round((exp(delta_tlb) - 1) * 100, 1), "% more births\n")
+
+tlb_adj <- tlb_x - delta_tlb * tlb_series$dragon
+
+
+# 2.3 MANUAL K-YEAR AVERAGE MODEL ON LOG(TLB)
+# ============================================================
+
+tlb_n_tr <- sum(tlb_series$year <= 2012)
+tlb_ma   <- rep(NA, tlb_n)
+
+# Training: one-step forecasts
+for (t in (k + 1):tlb_n_tr) {
   total <- 0
   for (j in 1:k) {
-    total <- total + tlb_x[t - j]
+    total <- total + tlb_adj[t - j]
   }
   tlb_ma[t] <- total / k
 }
 
-tlb_series$log_forecast <- tlb_ma
-tlb_series$log_residual <- tlb_series$log_value - tlb_series$log_forecast
+# Testing: multi-step forecasts
+tlb_hist <- tlb_adj[1:tlb_n_tr]
+for (t in (tlb_n_tr + 1):tlb_n) {
+  total <- 0
+  for (j in 1:k) {
+    total <- total + tlb_hist[t - j]
+  }
+  tlb_ma[t]   <- total / k
+  tlb_hist[t] <- tlb_ma[t]
+}
+
+tlb_series$log_forecast    <- tlb_ma + delta_tlb * tlb_series$dragon
+tlb_series$log_residual    <- tlb_series$log_value - tlb_series$log_forecast
+tlb_series$forecast_births <- exp(tlb_series$log_forecast)   # back to births
 
 
-# 2.3 SPLIT INTO TRAINING AND TESTING
+# 2.4 SPLIT INTO TRAINING AND TESTING
 # ============================================================
 
 tlb_train <- tlb_series %>% filter(year <= 2012)
 tlb_test  <- tlb_series %>% filter(year >= 2013)
 
-print(tlb_test %>% select(year, log_value, log_forecast, log_residual))
+print(tlb_test %>%
+        select(year, value, forecast_births, log_value, log_forecast, log_residual))
 
 
-# 2.4 ACCURACY ON LOG SCALE: RMSE, MAE, MAPE
+# 2.5 ACCURACY: LOG SCALE AND BIRTHS SCALE
 # ============================================================
 
 tlb_tr <- tlb_train %>% filter(!is.na(log_forecast))
@@ -1008,24 +1073,27 @@ tlb_te <- tlb_test  %>% filter(!is.na(log_forecast))
 
 tlb_accuracy <- rbind(
   accuracy(tlb_tr$log_forecast, tlb_tr$log_value)[, c("RMSE", "MAE", "MAPE")],
-  accuracy(tlb_te$log_forecast, tlb_te$log_value)[, c("RMSE", "MAE", "MAPE")]
+  accuracy(tlb_te$log_forecast, tlb_te$log_value)[, c("RMSE", "MAE", "MAPE")],
+  accuracy(tlb_te$forecast_births, tlb_te$value)[, c("RMSE", "MAE", "MAPE")]
 )
-rownames(tlb_accuracy) <- c("Training", "Testing")
+rownames(tlb_accuracy) <- c("Training (log)", "Testing (log)", "Testing (births)")
 
 cat("log TLB accuracy, k =", k, "\n")
 print(round(tlb_accuracy, 4))
 
 
-# 2.5 ACF AND PACF - TRAINING
+# 2.6 ACF AND PACF - TRAINING
 # ============================================================
 
 tlb_res_train <- na.omit(tlb_train$log_residual)
+
+print(Box.test(tlb_res_train, lag = 10, type = "Ljung-Box"))
 
 acf(tlb_res_train,  lag.max = 40, main = paste("ACF Training - log TLB, k =", k))
 pacf(tlb_res_train, lag.max = 40, main = paste("PACF Training - log TLB, k =", k))
 
 
-# 2.6 ACF AND PACF - TESTING
+# 2.7 ACF AND PACF - TESTING
 # ============================================================
 
 tlb_res_test <- na.omit(tlb_test$log_residual)
@@ -1035,7 +1103,7 @@ acf(tlb_res_test,  lag.max = tlb_lag_test, main = paste("ACF Testing - log TLB, 
 pacf(tlb_res_test, lag.max = tlb_lag_test, main = paste("PACF Testing - log TLB, k =", k))
 
 
-# 2.7 PLOT: TRAINING (1960 - 2012)
+# 2.8 PLOT: TRAINING (1960 - 2012)
 # ============================================================
 
 ggplot(tlb_train, aes(x = year)) +
@@ -1044,29 +1112,54 @@ ggplot(tlb_train, aes(x = year)) +
             linetype = "dashed", linewidth = 1) +
   scale_colour_manual(values = setNames(c("black", "red"),
                                         c("Actual", ma_label))) +
-  labs(title = paste0("log TLB: Actual vs ", k, "-Year Average Model (Training 1960-2012)"),
+  labs(title = paste0("log TLB: Actual vs ", ma_label, " (Training 1960-2012)"),
        x = "Year", y = "log(Total Live-Births)", colour = "") +
   theme_minimal() +
   theme(legend.position = "bottom")
 
 
-# 2.8 PLOT: TESTING (2013 - 2025)
+# 2.9 PLOT: TESTING (2013 - 2025), BIRTHS SCALE
 # ============================================================
 
 ggplot(tlb_test, aes(x = year)) +
-  geom_line(aes(y = log_value, colour = "Actual"), linewidth = 1) +
-  geom_point(aes(y = log_value, colour = "Actual"), size = 2) +
-  geom_line(aes(y = log_forecast, colour = ma_label),
+  geom_line(aes(y = value, colour = "Actual"), linewidth = 1) +
+  geom_point(aes(y = value, colour = "Actual"), size = 2) +
+  geom_line(aes(y = forecast_births, colour = ma_label),
             linetype = "dashed", linewidth = 1) +
-  geom_point(aes(y = log_forecast, colour = ma_label), size = 2) +
+  geom_point(aes(y = forecast_births, colour = ma_label), size = 2) +
   scale_x_continuous(breaks = 2013:2025) +
   scale_colour_manual(values = setNames(c("black", "red"),
                                         c("Actual", ma_label))) +
-  labs(title = paste0("log TLB: Actual vs ", k, "-Year Average Model (Testing 2013-2025)"),
-       x = "Year", y = "log(Total Live-Births)", colour = "") +
+  labs(title = paste0("Total Live-Births: Actual vs ", ma_label, " (Testing 2013-2025)"),
+       x = "Year", y = "Total Live-Births", colour = "") +
   theme_minimal() +
   theme(legend.position = "bottom",
         axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# SECTION 3: NAIVE MODEL RESULTS TABLE
+# ============================================================
+
+naive_results <- data.frame(
+  Series = c("TFR", "TFR", "log TLB", "log TLB", "TLB (births, original scale)"),
+  Period = c("Training", "Testing", "Training", "Testing", "Testing"),
+  RMSE   = c(tfr_accuracy[, "RMSE"], tlb_accuracy[, "RMSE"]),
+  MAE    = c(tfr_accuracy[, "MAE"],  tlb_accuracy[, "MAE"]),
+  MAPE   = c(tfr_accuracy[, "MAPE"], tlb_accuracy[, "MAPE"])
+)
+
+# Display results for rates, whole numbers for births
+births_row <- naive_results$Series == "TLB (births, original scale)"
+
+SMA_table <- naive_results %>%
+  mutate(
+    RMSE = ifelse(births_row, format(round(RMSE), big.mark = ","), sprintf("%.3f", RMSE)),
+    MAE  = ifelse(births_row, format(round(MAE),  big.mark = ","), sprintf("%.3f", MAE)),
+    `MAPE (%)` = sprintf("%.2f", MAPE)
+  ) %>%
+  select(Series, Period, RMSE, MAE, `MAPE (%)`)
+
+print(SMA_table)
 
 ##############################################################
 #ARIMA MODEL - TFR
